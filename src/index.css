@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 40% 6%;
+    --foreground: 220 20% 90%;
+
+    --card: 224 35% 10%;
+    --card-foreground: 220 20% 90%;
+
+    --popover: 224 35% 10%;
+    --popover-foreground: 220 20% 90%;
+
+    --primary: 262 70% 62%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 224 30% 16%;
+    --secondary-foreground: 220 20% 85%;
+
+    --muted: 224 25% 14%;
+    --muted-foreground: 220 15% 55%;
+
+    --accent: 262 50% 25%;
+    --accent-foreground: 262 70% 80%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 224 25% 18%;
+    --input: 224 25% 18%;
+    --ring: 262 70% 62%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 224 35% 8%;
+    --sidebar-foreground: 220 20% 90%;
+    --sidebar-primary: 262 70% 62%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 224 30% 14%;
+    --sidebar-accent-foreground: 220 20% 85%;
+    --sidebar-border: 224 25% 18%;
+    --sidebar-ring: 262 70% 62%;
+
+    /* Custom tokens */
+    --surface: 224 30% 12%;
+    --surface-hover: 224 28% 16%;
+    --glow-primary: 262 70% 62%;
+    --gradient-primary: linear-gradient(135deg, hsl(262, 70%, 62%), hsl(290, 60%, 55%));
+    --gradient-surface: linear-gradient(180deg, hsl(224, 35%, 10%), hsl(224, 40%, 6%));
+    --shadow-glow: 0 0 30px -5px hsl(262 70% 62% / 0.25);
+    --font-display: 'Outfit', sans-serif;
+    --font-reading: 'Crimson Pro', Georgia, serif;
+  }
+
+  /* Reader themes */
+  .reader-light {
+    --background: 40 30% 96%;
+    --foreground: 224 30% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 30% 15%;
+    --muted: 40 20% 90%;
+    --muted-foreground: 224 15% 45%;
+    --border: 40 15% 85%;
+  }
+
+  .reader-sepia {
+    --background: 36 40% 88%;
+    --foreground: 30 20% 20%;
+    --card: 36 35% 92%;
+    --card-foreground: 30 20% 20%;
+    --muted: 36 30% 82%;
+    --muted-foreground: 30 15% 40%;
+    --border: 36 20% 78%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-display);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-reading {
+    font-family: var(--font-reading);
+  }
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+  .gradient-surface {
+    background: var(--gradient-surface);
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  .text-gradient {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(224, 40%, 6%);
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(224, 25%, 20%);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(224, 25%, 28%);
+}
