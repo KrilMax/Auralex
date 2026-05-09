@@ -1,1 +1,2 @@
-TODO: Document your project here
+# Auralex
+AI-powered cloud ebook reader with semantic search and TTS
