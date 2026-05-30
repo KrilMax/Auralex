@@ -24,6 +24,11 @@ export const processBook = async (
         'http://127.0.0.1:8000/parse-txt';
       break;
 
+    case 'fb2':
+      endpoint =
+        'http://127.0.0.1:8000/parse-fb2';
+      break;
+
     default:
       throw new Error(
         `Unsupported format: ${extension}`

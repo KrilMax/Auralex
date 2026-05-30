@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
+from parser.fb2_parser import parse_fb2
 from parser.txt_parser import parse_txt
 from parser.epub_parser import parse_epub
 
@@ -25,6 +26,23 @@ def root():
     return {
         "message": "Auralex Backend работает"
     }
+
+@app.post("/parse-fb2")
+async def parse_uploaded_fb2(
+    file: UploadFile = File(...)
+):
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".fb2"
+    ) as temp_file:
+
+        content = await file.read()
+
+        temp_file.write(content)
+
+        temp_path = temp_file.name
+
+    return parse_fb2(temp_path)
 
 @app.post("/parse-txt")
 async def parse_uploaded_txt(
