@@ -43,6 +43,10 @@ async def parse_uploaded_txt(
 
     result = parse_txt(temp_path)
 
+    result["title"] = (
+        file.filename.rsplit(".", 1)[0]
+    )
+
     return result
 
 @app.post("/parse-epub")

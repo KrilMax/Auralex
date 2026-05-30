@@ -14,9 +14,10 @@ def parse_txt(file_path: str):
         "format": "txt",
         "chapters": [
             {
-                "id": 1,
-                "title": "Full Text",
-                "content": text
+                "id": "chapter-1",
+                "title": "",
+                "content": text,
+                "order": 1
             }
         ]
     }
