@@ -21,6 +21,8 @@ export interface Book {
 
   readingProgress: number;
 
+  lastChapter?: number;
+  
   chapters?: Chapter[];
 }
 

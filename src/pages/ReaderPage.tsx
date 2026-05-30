@@ -41,6 +41,11 @@ const [loading, setLoading] =
 
 const [currentPage, setCurrentPage] = useState(0);
 
+const [initialScrollDone, setInitialScrollDone] =
+  useState(false);
+
+const [showToolbar, setShowToolbar] = useState(true);
+
 useEffect(() => {
   const loadBook = async () => {
     if (!id) return;
@@ -87,13 +92,48 @@ useEffect(() => {
 
   loadBook();
 }, [id]);
+
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
-  const [showToolbar, setShowToolbar] = useState(true);
   const lastScrollY = useRef(0);
 
+useEffect(() => {
+  if (!book) return;
+
+  if (initialScrollDone) return;
+
+  if (settings.readingMode !== 'scroll')
+    return;
+
+  const chapter =
+    book.chapters?.[currentPage];
+
+  if (!chapter) return;
+
+  const timer = setTimeout(() => {
+    const el = document.getElementById(
+      `chapter-${chapter.id}`
+    );
+
+    if (el) {
+      el.scrollIntoView({
+        behavior: 'auto',
+        block: 'start',
+      });
+
+      setInitialScrollDone(true);
+    }
+  }, 500);
+
+  return () => clearTimeout(timer);
+}, [
+  book,
+  currentPage,
+  settings.readingMode,
+  initialScrollDone,
+]);
 
 useEffect(() => {
   if (!book) return;
@@ -106,6 +146,7 @@ useEffect(() => {
 
   updateBook(book.id, {
     readingProgress: progress,
+    lastChapter: currentPage,
   }).catch(console.error);
 
 }, [currentPage]);
