@@ -1,14 +1,25 @@
 export interface Book {
   id: string;
+
+  ownerId: string;
+
   title: string;
-  author: string;
-  coverUrl: string;
-  progress: number; // 0-100
-  lastRead?: Date;
-  chapters: Chapter[];
-  totalPages: number;
-  currentChapter: number;
-  genre: string;
+
+  format: string;
+
+  originalFilePath: string;
+
+  processedFilePath: string;
+
+  processingStatus:
+    | 'uploading'
+    | 'processing'
+    | 'completed'
+    | 'failed';
+
+  uploadedAt?: unknown;
+
+  readingProgress: number;
 }
 
 export interface Chapter {

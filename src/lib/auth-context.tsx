@@ -1,50 +1,183 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+} from 'react';
+
+import {
+  User as FirebaseUser,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  updateProfile,
+} from 'firebase/auth';
+
+import {
+  doc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+
+import { auth, db } from './firebase';
+
 import { User } from './types';
 
 interface AuthContextType {
   user: User | null;
+
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+
+  loading: boolean;
+
+  login: (
+    email: string,
+    password: string
+  ) => Promise<void>;
+
+  signup: (
+    name: string,
+    email: string,
+    password: string
+  ) => Promise<void>;
+
+  logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext =
+  createContext<AuthContextType | null>(null);
 
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+
+  if (!ctx) {
+    throw new Error(
+      'useAuth must be used within AuthProvider'
+    );
+  }
+
   return ctx;
 };
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem('auralex_user');
-    return stored ? JSON.parse(stored) : null;
-  });
+export const AuthProvider: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  const [user, setUser] =
+    useState<User | null>(null);
 
-  const login = useCallback(async (email: string, _password: string) => {
-    // Mock login
-    await new Promise(r => setTimeout(r, 800));
-    const u: User = { id: '1', name: email.split('@')[0], email };
-    setUser(u);
-    localStorage.setItem('auralex_user', JSON.stringify(u));
+  const [loading, setLoading] =
+    useState(true);
+
+  useEffect(() => {
+    const unsubscribe =
+      onAuthStateChanged(
+        auth,
+        (
+          firebaseUser:
+            | FirebaseUser
+            | null
+        ) => {
+          if (firebaseUser) {
+            const u: User = {
+              id: firebaseUser.uid,
+              name:
+                firebaseUser.displayName ||
+                firebaseUser.email?.split(
+                  '@'
+                )[0] ||
+                'User',
+              email:
+                firebaseUser.email || '',
+              avatarUrl:
+                firebaseUser.photoURL ||
+                undefined,
+            };
+
+            setUser(u);
+          } else {
+            setUser(null);
+          }
+          setLoading(false);
+        }
+      );
+
+    return unsubscribe;
   }, []);
 
-  const signup = useCallback(async (name: string, email: string, _password: string) => {
-    await new Promise(r => setTimeout(r, 800));
-    const u: User = { id: '1', name, email };
-    setUser(u);
-    localStorage.setItem('auralex_user', JSON.stringify(u));
-  }, []);
+  const login = useCallback(
+    async (
+      email: string,
+      password: string
+    ) => {
+      await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+    },
+    []
+  );
 
-  const logout = useCallback(() => {
-    setUser(null);
-    localStorage.removeItem('auralex_user');
-  }, []);
+  const signup = useCallback(
+    async (
+      name: string,
+      email: string,
+      password: string
+    ) => {
+      const userCredential =
+        await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+
+      await updateProfile(
+        userCredential.user,
+        {
+          displayName: name,
+        }
+      );
+
+      await setDoc(
+        doc(
+          db,
+          'users',
+          userCredential.user.uid
+        ),
+        {
+          email,
+          displayName: name,
+          createdAt:
+            serverTimestamp(),
+          theme: 'dark',
+          defaultReadingMode:
+            'scroll',
+        }
+      );
+    },
+    []
+  );
+
+  const logout = useCallback(
+    async () => {
+      await signOut(auth);
+    },
+    []
+  );
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        loading,
+        login,
+        signup,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

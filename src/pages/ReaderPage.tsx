@@ -1,11 +1,15 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { mockBooks } from '@/lib/mock-data';
 import { ReaderSettings } from '@/lib/types';
 import ReaderSettingsDrawer from '@/components/ReaderSettingsDrawer';
 import SemanticSearchModal from '@/components/SemanticSearchModal';
 import TTSControlPanel from '@/components/TTSControlPanel';
 import { Button } from '@/components/ui/button';
+import {
+  doc,
+  getDoc,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import {
   ArrowLeft,
   Settings,
@@ -28,8 +32,43 @@ const defaultSettings: ReaderSettings = {
 const ReaderPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const book = useMemo(() => mockBooks.find(b => b.id === id), [id]);
+const [book, setBook] =
+  useState<any>(null);
 
+const [loading, setLoading] =
+  useState(true);
+
+useEffect(() => {
+  const loadBook =
+    async () => {
+      if (!id) return;
+
+      try {
+        const docRef =
+          doc(db, 'books', id);
+
+        const snapshot =
+          await getDoc(docRef);
+
+        if (
+          snapshot.exists()
+        ) {
+          setBook({
+            id:
+              snapshot.id,
+
+            ...snapshot.data(),
+          });
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  loadBook();
+}, [id]);
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -51,6 +90,14 @@ const ReaderPage: React.FC = () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  if (loading) {
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      Loading book...
+    </div>
+  );
+}
 
   if (!book) {
     return (
