@@ -1,6 +1,7 @@
+import { updateBook } from '@/lib/firebase';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ReaderSettings } from '@/lib/types';
+import { ReaderSettings, Book } from '@/lib/types';
 import ReaderSettingsDrawer from '@/components/ReaderSettingsDrawer';
 import SemanticSearchModal from '@/components/SemanticSearchModal';
 import TTSControlPanel from '@/components/TTSControlPanel';
@@ -33,39 +34,56 @@ const ReaderPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 const [book, setBook] =
-  useState<any>(null);
+  useState<Book | null>(null);
 
 const [loading, setLoading] =
   useState(true);
 
+const [currentPage, setCurrentPage] = useState(0);
+
 useEffect(() => {
-  const loadBook =
-    async () => {
-      if (!id) return;
+  const loadBook = async () => {
+    if (!id) return;
 
-      try {
-        const docRef =
-          doc(db, 'books', id);
+    try {
+      const docRef =
+        doc(db, 'books', id);
 
-        const snapshot =
-          await getDoc(docRef);
+      const snapshot =
+        await getDoc(docRef);
+
+      if (snapshot.exists()) {
+        const loadedBook = {
+          id: snapshot.id,
+          ...snapshot.data(),
+        } as Book;
+
+        setBook(loadedBook);
 
         if (
-          snapshot.exists()
+          loadedBook.readingProgress &&
+          loadedBook.chapters
         ) {
-          setBook({
-            id:
-              snapshot.id,
+          const page =
+            Math.floor(
+              (loadedBook.readingProgress / 100) *
+              loadedBook.chapters.length
+            );
 
-            ...snapshot.data(),
-          });
+          setCurrentPage(
+            Math.min(
+              page,
+              loadedBook.chapters.length - 1
+            )
+          );
         }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   loadBook();
 }, [id]);
@@ -73,9 +91,73 @@ useEffect(() => {
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showTTS, setShowTTS] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
   const [showToolbar, setShowToolbar] = useState(true);
   const lastScrollY = useRef(0);
+
+
+useEffect(() => {
+  if (!book) return;
+
+  const progress = Math.round(
+    ((currentPage + 1) /
+      book.chapters.length) *
+      100
+  );
+
+  updateBook(book.id, {
+    readingProgress: progress,
+  }).catch(console.error);
+
+}, [currentPage]);
+
+  useEffect(() => {
+  if (settings.readingMode !== 'scroll')
+    return;
+
+  const handleScrollProgress = () => {
+    const scrollTop =
+      window.scrollY;
+
+    const documentHeight =
+      document.documentElement
+        .scrollHeight -
+      window.innerHeight;
+
+    if (documentHeight <= 0)
+      return;
+
+    const progress =
+      scrollTop /
+      documentHeight;
+
+    const chapterIndex =
+      Math.min(
+        book.chapters.length - 1,
+        Math.floor(
+          progress *
+            book.chapters.length
+        )
+      );
+
+    setCurrentPage(
+      chapterIndex
+    );
+  };
+
+  window.addEventListener(
+    'scroll',
+    handleScrollProgress
+  );
+
+  return () =>
+    window.removeEventListener(
+      'scroll',
+      handleScrollProgress
+    );
+}, [
+  settings.readingMode,
+  book
+]);
 
   useEffect(() => {
     const handleScroll = () => {

@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
-
+import { processBook } from './process-book';
+import { updateDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 import {
@@ -59,6 +60,18 @@ export const uploadBook = async (
         readingProgress: 0,
       }
     );
+  const parsedBook =
+    await processBook(file);
 
+  await updateDoc(
+    doc(db, 'books', bookDoc.id),
+    {
+      chapters:
+        parsedBook.chapters,
+
+      processingStatus:
+        'completed',
+    }
+  );
   return bookDoc.id;
 };

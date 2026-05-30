@@ -20,6 +20,8 @@ export interface Book {
   uploadedAt?: unknown;
 
   readingProgress: number;
+
+  chapters?: Chapter[];
 }
 
 export interface Chapter {
