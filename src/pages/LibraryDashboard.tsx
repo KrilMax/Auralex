@@ -6,6 +6,12 @@ import React, {
 
 import { useNavigate } from 'react-router-dom';
 
+import { updateBookTitle } from '@/services/update-book-title';
+
+import EditBookDialog from '@/components/EditBookDialog';
+
+import { deleteBook } from '@/services/delete-book';
+
 import { useAuth } from '@/lib/auth-context';
 
 import { Book } from '@/lib/types';
@@ -26,17 +32,20 @@ import {
   LogOut,
   Clock,
   TrendingUp,
+  Pencil,
 } from 'lucide-react';
 
 const BookCard: React.FC<{
   book: Book;
 
   onClick: () => void;
+  onEdit: (book: Book) => void;
 
   index: number;
 }> = ({
   book,
   onClick,
+  onEdit,
   index,
 }) => {
   const colors = [
@@ -90,6 +99,19 @@ const BookCard: React.FC<{
           </div>
         </div>
 
+        <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+
+      onEdit(book);
+    }}
+    className="w-8 h-8 rounded-full bg-primary/80 flex items-center justify-center"
+  >
+    <Pencil className="w-4 h-4 text-primary-foreground" />
+  </button>
+</div>
+        
         {book.readingProgress >
           0 && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-foreground/10">
@@ -150,6 +172,9 @@ const LibraryDashboard: React.FC =
       loadingBooks,
       setLoadingBooks,
     ] = useState(true);
+
+    const [editingBook, setEditingBook] =
+  useState<Book | null>(null);
 
     useEffect(() => {
       const loadBooks =
@@ -429,6 +454,9 @@ const LibraryDashboard: React.FC =
                             `/read/${book.id}`
                           )
                         }
+                        onEdit={(book) =>
+                          setEditingBook(book)
+                        }
                       />
                     )
                   )}
@@ -459,6 +487,9 @@ const LibraryDashboard: React.FC =
                         `/read/${book.id}`
                       )
                     }
+                    onEdit={(book) =>
+                      setEditingBook(book)
+                    }
                   />
                 )
               )}
@@ -478,6 +509,70 @@ const LibraryDashboard: React.FC =
             )}
           </section>
         </main>
+      
+      <EditBookDialog
+        open={editingBook !== null}
+        onClose={() =>
+          setEditingBook(null)
+        }
+        book={editingBook}
+        onSave={async (
+          bookId,
+          title
+        ) => {
+          try {
+            await updateBookTitle(
+              bookId,
+              title
+            );
+
+            setBooks((prev) =>
+              prev.map((book) =>
+                book.id === bookId
+                  ? {
+                      ...book,
+                      title,
+                    }
+                  : book
+              )
+            );
+
+            setEditingBook(null);
+          } catch (error) {
+            console.error(error);
+
+            alert(
+              'Failed to update book'
+            );
+          }
+        }}
+        onDelete={async (bookId) => {
+          if (!editingBook) return;
+
+          try {
+            await deleteBook(
+              bookId,
+              editingBook.originalFilePath
+            );
+
+            setBooks((prev) =>
+              prev.filter(
+                (b) => b.id !== bookId
+              )
+            );
+
+            setEditingBook(null);
+          } catch (error) {
+            console.error(error);
+
+            alert(
+              'Failed to delete book'
+            );
+          }
+        }}
+      />
+      
+      
       </div>
     );
   };
