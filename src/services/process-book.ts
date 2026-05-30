@@ -5,16 +5,41 @@ export const processBook = async (
 
   formData.append('file', file);
 
-  const response = await fetch(
-    'http://127.0.0.1:8000/parse-epub',
-    {
+  const extension =
+    file.name
+      .split('.')
+      .pop()
+      ?.toLowerCase();
+
+  let endpoint = '';
+
+  switch (extension) {
+    case 'epub':
+      endpoint =
+        'http://127.0.0.1:8000/parse-epub';
+      break;
+
+    case 'txt':
+      endpoint =
+        'http://127.0.0.1:8000/parse-txt';
+      break;
+
+    default:
+      throw new Error(
+        `Unsupported format: ${extension}`
+      );
+  }
+
+  const response =
+    await fetch(endpoint, {
       method: 'POST',
       body: formData,
-    }
-  );
+    });
 
   if (!response.ok) {
-    throw new Error('Failed to process book');
+    throw new Error(
+      'Failed to process book'
+    );
   }
 
   return response.json();

@@ -66,20 +66,11 @@ useEffect(() => {
         setBook(loadedBook);
 
         if (
-          loadedBook.readingProgress &&
-          loadedBook.chapters
+          typeof loadedBook.lastChapter ===
+          'number'
         ) {
-          const page =
-            Math.floor(
-              (loadedBook.readingProgress / 100) *
-              loadedBook.chapters.length
-            );
-
           setCurrentPage(
-            Math.min(
-              page,
-              loadedBook.chapters.length - 1
-            )
+            loadedBook.lastChapter
           );
         }
       }
@@ -151,39 +142,43 @@ useEffect(() => {
 
 }, [currentPage]);
 
-  useEffect(() => {
-  if (settings.readingMode !== 'scroll')
+useEffect(() => {
+  if (
+    settings.readingMode !== 'scroll'
+  )
     return;
 
-  const handleScrollProgress = () => {
-    const scrollTop =
-      window.scrollY;
+  const handleScrollProgress =
+    () => {
+      const chapters =
+        document.querySelectorAll(
+          '[id^="chapter-"]'
+        );
 
-    const documentHeight =
-      document.documentElement
-        .scrollHeight -
-      window.innerHeight;
+      let visibleChapter = 0;
 
-    if (documentHeight <= 0)
-      return;
+      chapters.forEach(
+        (
+          chapter,
+          index
+        ) => {
+          const rect =
+            chapter.getBoundingClientRect();
 
-    const progress =
-      scrollTop /
-      documentHeight;
-
-    const chapterIndex =
-      Math.min(
-        book.chapters.length - 1,
-        Math.floor(
-          progress *
-            book.chapters.length
-        )
+          if (
+            rect.top <=
+            window.innerHeight * 0.7
+          ) {
+            visibleChapter =
+              index;
+          }
+        }
       );
 
-    setCurrentPage(
-      chapterIndex
-    );
-  };
+      setCurrentPage(
+        visibleChapter
+      );
+    };
 
   window.addEventListener(
     'scroll',
