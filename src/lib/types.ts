@@ -23,6 +23,8 @@ export interface Book {
 
   lastChapter?: number;
   
+  lastPageIndex?: number;
+
   chapters?: Chapter[];
 }
 

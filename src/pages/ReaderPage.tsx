@@ -57,6 +57,11 @@ const [pages, setPages] =
 const [currentPageIndex, setCurrentPageIndex] =
   useState(0);
 
+const [
+  positionRestored,
+  setPositionRestored,
+] = useState(false);
+
 const [initialScrollDone, setInitialScrollDone] =
   useState(false);
 
@@ -81,14 +86,14 @@ useEffect(() => {
 
         setBook(loadedBook);
 
-        if (
+        /*if (
           typeof loadedBook.lastChapter ===
           'number'
         ) {
           setCurrentPage(
             loadedBook.lastChapter
           );
-        }
+        }*/
       }
     } catch (error) {
       console.error(error);
@@ -100,7 +105,17 @@ useEffect(() => {
   loadBook();
 }, [id]);
 
-  const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
+  const [settings, setSettings] =
+  useState<ReaderSettings>(() => {
+    const saved =
+      localStorage.getItem(
+        'reader-settings'
+      );
+
+    return saved
+      ? JSON.parse(saved)
+      : defaultSettings;
+  });
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const bookBlocks = React.useMemo(() => {
@@ -132,58 +147,138 @@ useEffect(() => {
     );
   }, [book]);
 
-const pagesPreview =
-  React.useMemo(() => {
-    const result = [];
+const generatedPages = React.useMemo(() => {
+  if (!book) return [];
 
-    let currentPage = [];
+  const result: Page[] = [];
 
-    for (
-      let i = 0;
-      i < bookBlocks.length;
-      i++
-    ) {
-      currentPage.push(
-        bookBlocks[i]
-      );
+  let currentContent: string[] = [];
+  let currentChapterIndex = 0;
+  let startsChapter = false;
+  let currentTitle = '';
 
-      if (
-        currentPage.length >= 8
-      ) {
-        result.push(
-          currentPage
-        );
+  for (const block of bookBlocks) {
+    if (block.type === 'chapter') {
+      if (currentContent.length > 0) {
+        result.push({
+          content: currentContent.join('\n\n'),
+          chapterIndex: currentChapterIndex,
+          startsChapter,
+          chapterTitle: currentTitle,
+        });
 
-        currentPage = [];
+        currentContent = [];
       }
+
+      currentChapterIndex =
+        block.chapterIndex;
+
+      currentTitle =
+        block.content;
+
+      startsChapter = true;
+
+      continue;
     }
+
+    currentContent.push(
+      block.content
+    );
 
     if (
-      currentPage.length > 0
+      currentContent.length >= 5
     ) {
-      result.push(
-        currentPage
-      );
+      result.push({
+        content: currentContent.join(
+          '\n\n'
+        ),
+        chapterIndex:
+          currentChapterIndex,
+        startsChapter,
+        chapterTitle:
+          currentTitle,
+      });
+
+      currentContent = [];
+
+      startsChapter = false;
     }
+  }
 
-    return result;
-  }, [bookBlocks]);
+  if (currentContent.length > 0) {
+    result.push({
+      content: currentContent.join(
+        '\n\n'
+      ),
+      chapterIndex:
+        currentChapterIndex,
+      startsChapter,
+      chapterTitle:
+        currentTitle,
+    });
+  }
 
-  const totalParagraphs =
-  React.useMemo(
-    () =>
-      bookBlocks.filter(
-        (block) =>
-          block.type ===
-          'paragraph'
-      ).length,
-    [bookBlocks]
+  return result;
+}, [book, bookBlocks]);
+
+useEffect(() => {
+  if (!book) return;
+
+  if (generatedPages.length === 0)
+    return;
+
+  if (
+    typeof book.lastPageIndex ===
+    'number'
+  ) {
+    setCurrentPageIndex(
+      Math.min(
+        book.lastPageIndex,
+        generatedPages.length - 1
+      )
+    );
+
+    setPositionRestored(
+      true
+    );
+
+    return;
+  }
+
+  if (
+    typeof book.readingProgress !==
+    'number'
+  )
+    return;
+
+  const page = Math.floor(
+    (book.readingProgress / 100) *
+    (generatedPages.length - 1)
   );
 
+  setCurrentPageIndex(
+    Math.min(
+      page,
+      generatedPages.length - 1
+    )
+  );
+
+  setPositionRestored(true);
+}, [
+  book,
+  generatedPages.length,
+]);
+
   const [showTTS, setShowTTS] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem(
+      'reader-settings',
+      JSON.stringify(settings)
+    );
+  }, [settings]);
+
   const lastScrollY = useRef(0);
-
-
   
 useEffect(() => {
   if (!book) return;
@@ -224,18 +319,29 @@ useEffect(() => {
 useEffect(() => {
   if (!book) return;
 
-  const progress = Math.round(
-    ((currentPage + 1) /
-      book.chapters.length) *
-      100
-  );
+  if (generatedPages.length === 0)
+    return;
+
+  if (!positionRestored)
+    return;
+
+  const progress =
+    (
+      currentPageIndex /
+      (generatedPages.length - 1)
+    ) * 100;
 
   updateBook(book.id, {
     readingProgress: progress,
-    lastChapter: currentPage,
+    lastPageIndex:
+      currentPageIndex,
   }).catch(console.error);
 
-}, [currentPage]);
+}, [
+  currentPageIndex,
+  generatedPages.length,
+  positionRestored,
+]);
 
 useEffect(() => {
   if (
@@ -346,7 +452,14 @@ useEffect(() => {
               </Button>
               <div className="hidden sm:block">
                 <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{book.title}</p>
-                <p className="text-xs text-muted-foreground">{book.chapters[currentPage]?.title || 'Chapter 1'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {
+                    book.chapters[
+                      generatedPages[currentPageIndex]
+                        ?.chapterIndex ?? 0
+                    ]?.title
+                  }
+</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -365,7 +478,12 @@ useEffect(() => {
           <div className="h-0.5 bg-border">
             <div
               className="h-full gradient-primary transition-all duration-500"
-              style={{ width: `${((currentPage + 1) / book.chapters.length) * 100}%` }}
+              style={{
+                width: `${(
+                  (currentPageIndex + 1) /
+                  generatedPages.length
+                ) * 100}%`
+              }}
             />
           </div>
         </div>
@@ -408,35 +526,65 @@ useEffect(() => {
           ) : (
             // Pagination mode
             <div>
-              <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
-                {book.chapters[currentPage]?.title}
-              </h2>
-              {book.chapters[currentPage]?.content.split('\n\n').map((para, j) => (
-                <p
-                  key={j}
-                  className="text-foreground/90 font-reading"
-                  style={{ marginBottom: `${settings.paragraphSpacing}em` }}
-                >
-                  {para}
-                </p>
-              ))}
+              {generatedPages[currentPageIndex]
+                ?.startsChapter && (
+                <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
+                   {
+                    generatedPages[
+                      currentPageIndex
+                    ]?.chapterTitle
+                  }
+                </h2>
+              )}
+
+              {generatedPages[
+                currentPageIndex
+              ]?.content
+                ?.split('\n\n')
+                .map((para, j) => (
+                  <p
+                    key={j}
+                    className="text-foreground/90 font-reading"
+                    style={{
+                      marginBottom: `${settings.paragraphSpacing}em`,
+                    }}
+                  >
+                    {para}
+                  </p>
+                ))}
               {/* Pagination controls */}
               <div className="flex items-center justify-between mt-12 pt-8 border-t border-border">
                 <Button
                   variant="ghost"
-                  onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-                  disabled={currentPage === 0}
+                  onClick={() =>
+                    setCurrentPageIndex(
+                    p =>
+                      Math.max(
+                        0,
+                        p - 1
+                      )
+                    )
+                   }
+                  disabled={currentPageIndex === 0}
                   className="gap-2 text-muted-foreground"
                 >
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  {currentPage + 1} / {book.chapters.length}
+                  {currentPageIndex + 1} / {generatedPages.length}
                 </span>
                 <Button
                   variant="ghost"
-                  onClick={() => setCurrentPage(p => Math.min(book.chapters.length - 1, p + 1))}
-                  disabled={currentPage === book.chapters.length - 1}
+                  onClick={() =>
+                    setCurrentPageIndex(
+                      p =>
+                        Math.min(
+                          generatedPages.length - 1,
+                          p + 1
+                        )
+                    )
+                   }
+                  disabled={currentPageIndex === generatedPages.length - 1}
                   className="gap-2 text-muted-foreground"
                 >
                   Next <ChevronRight className="w-4 h-4" />
