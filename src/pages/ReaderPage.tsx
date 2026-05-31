@@ -20,6 +20,16 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
+interface Page {
+  content: string;
+
+  chapterIndex: number;
+
+  startsChapter: boolean;
+
+  chapterTitle?: string;
+}
+
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
   fontFamily: "'Crimson Pro', Georgia, serif",
@@ -40,6 +50,12 @@ const [loading, setLoading] =
   useState(true);
 
 const [currentPage, setCurrentPage] = useState(0);
+
+const [pages, setPages] =
+  useState<Page[]>([]);
+
+const [currentPageIndex, setCurrentPageIndex] =
+  useState(0);
 
 const [initialScrollDone, setInitialScrollDone] =
   useState(false);
@@ -87,9 +103,88 @@ useEffect(() => {
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const bookBlocks = React.useMemo(() => {
+    if (!book) return [];
+
+    return book.chapters.flatMap(
+      (chapter, chapterIndex) => {
+        const paragraphs =
+          chapter.content
+            .split('\n\n')
+            .filter(Boolean);
+
+        return [
+          {
+            type: 'chapter',
+            content: chapter.title,
+            chapterIndex,
+          },
+
+          ...paragraphs.map(
+            (paragraph) => ({
+              type: 'paragraph',
+              content: paragraph,
+              chapterIndex,
+            })
+          ),
+        ];
+      }
+    );
+  }, [book]);
+
+const pagesPreview =
+  React.useMemo(() => {
+    const result = [];
+
+    let currentPage = [];
+
+    for (
+      let i = 0;
+      i < bookBlocks.length;
+      i++
+    ) {
+      currentPage.push(
+        bookBlocks[i]
+      );
+
+      if (
+        currentPage.length >= 8
+      ) {
+        result.push(
+          currentPage
+        );
+
+        currentPage = [];
+      }
+    }
+
+    if (
+      currentPage.length > 0
+    ) {
+      result.push(
+        currentPage
+      );
+    }
+
+    return result;
+  }, [bookBlocks]);
+
+  const totalParagraphs =
+  React.useMemo(
+    () =>
+      bookBlocks.filter(
+        (block) =>
+          block.type ===
+          'paragraph'
+      ).length,
+    [bookBlocks]
+  );
+
   const [showTTS, setShowTTS] = useState(false);
   const lastScrollY = useRef(0);
 
+
+  
 useEffect(() => {
   if (!book) return;
 
@@ -227,6 +322,8 @@ useEffect(() => {
       </div>
     );
   }
+
+
 
   const themeClass = settings.theme === 'light' ? 'reader-light' : settings.theme === 'sepia' ? 'reader-sepia' : '';
 

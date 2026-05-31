@@ -9,47 +9,86 @@ def parse_epub(file_path: str):
     chapter_id = 1
 
     for item in book.get_items():
-        if item.get_type() == 9:  # ITEM_DOCUMENT
+        if item.get_type() != 9:  # ITEM_DOCUMENT
+            continue
 
-            soup = BeautifulSoup(
-                item.get_content(),
-                "html.parser"
+        soup = BeautifulSoup(
+            item.get_content(),
+            "html.parser"
+        )
+
+        # Ищем заголовок главы
+        heading = soup.find(
+            ["h1", "h2", "h3"]
+        )
+
+        if heading:
+            title = heading.get_text(
+                separator=" ",
+                strip=True
             )
+        elif soup.title:
+            title = soup.title.get_text(
+                separator=" ",
+                strip=True
+            )
+        else:
+            title = f"Chapter {chapter_id}"
 
-            text = soup.get_text(
-                separator="\n",
+        # Собираем абзацы
+        paragraphs = []
+
+        for p in soup.find_all("p"):
+            text = p.get_text(
+                separator=" ",
                 strip=True
             )
 
-            if len(text.strip()) < 20:
-                continue
+            if text:
+                paragraphs.append(
+                    text
+                )
 
-            title = (
-                soup.title.string
-                if soup.title
-                else f"Chapter {chapter_id}"
+        # Если EPUB не использует <p>
+        if not paragraphs:
+            text = soup.get_text(
+                separator="\n\n",
+                strip=True
             )
 
-            chapters.append({
-                "id": chapter_id,
-                "title": title,
-                "content": text
-            })
+            paragraphs = [
+                part.strip()
+                for part in text.split("\n\n")
+                if part.strip()
+            ]
 
-            chapter_id += 1
+        content = "\n\n".join(
+            paragraphs
+        )
+
+        if len(content) < 20:
+            continue
+
+        chapters.append({
+            "id": chapter_id,
+            "title": title,
+            "content": content
+        })
+
+        chapter_id += 1
 
     return {
-        "title": book.get_metadata(
-            "DC",
-            "title"
-        )[0][0]
-        if book.get_metadata(
-            "DC",
-            "title"
-        )
-        else "Unknown Book",
-
+        "title": (
+            book.get_metadata(
+                "DC",
+                "title"
+            )[0][0]
+            if book.get_metadata(
+                "DC",
+                "title"
+            )
+            else "Unknown Book"
+        ),
         "format": "epub",
-
         "chapters": chapters
     }
