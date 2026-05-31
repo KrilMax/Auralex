@@ -409,6 +409,102 @@ useEffect(() => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+  
+useEffect(() => {
+  if (
+    settings.readingMode !==
+    'paginate'
+  )
+    return;
+
+  const handleKeyDown = (
+    e: KeyboardEvent
+  ) => {
+    if (
+      e.key === 'ArrowRight'
+    ) {
+      setCurrentPageIndex(
+        p =>
+          Math.min(
+            generatedPages.length - 1,
+            p + 1
+          )
+      );
+    }
+
+    if (
+      e.key === 'ArrowLeft'
+    ) {
+      setCurrentPageIndex(
+        p =>
+          Math.max(
+            0,
+            p - 1
+          )
+      );
+    }
+  };
+
+  window.addEventListener(
+    'keydown',
+    handleKeyDown
+  );
+
+  return () =>
+    window.removeEventListener(
+      'keydown',
+      handleKeyDown
+    );
+}, [
+  settings.readingMode,
+  generatedPages.length,
+]);
+
+const handleReaderClick = (
+  e: React.MouseEvent
+) => {
+  if (
+    settings.readingMode !==
+    'paginate'
+  )
+    return;
+
+  const contentRect =
+    contentRef.current?.getBoundingClientRect();
+
+  if (!contentRect) return;
+
+  const x = e.clientX;
+
+  if (x < contentRect.left) {
+    setCurrentPageIndex(
+      p => Math.max(0, p - 1)
+    );
+
+    return;
+  }
+
+  if (x > contentRect.right) {
+    setCurrentPageIndex(
+      p =>
+        Math.min(
+          generatedPages.length - 1,
+          p + 1
+        )
+    );
+
+    return;
+  }
+
+  setShowToolbar(
+    prev => !prev
+  );
+};
+
+const contentRef =
+  useRef<HTMLDivElement>(null);
+
+
 
   if (loading) {
   return (
@@ -492,9 +588,10 @@ useEffect(() => {
       {/* Content */}
       <div
         className="min-h-screen pt-20 pb-32 px-4"
-        onClick={e => e.stopPropagation()}
+        onClick={handleReaderClick}
       >
         <div
+          ref={contentRef}
           className="mx-auto"
           style={{
             maxWidth: `${settings.contentWidth}px`,
