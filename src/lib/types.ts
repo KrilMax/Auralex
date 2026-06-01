@@ -25,6 +25,8 @@ export interface Book {
   
   lastPageIndex?: number;
 
+  bookmarks?: Bookmark[];
+
   chapters?: Chapter[];
 }
 
@@ -57,4 +59,16 @@ export interface User {
   name: string;
   email: string;
   avatarUrl?: string;
+}
+
+export interface Bookmark {
+  id: string;
+
+  selectedText: string;
+
+  chapterIndex: number;
+
+  createdAt: number;
+
+  pageIndex: number;
 }

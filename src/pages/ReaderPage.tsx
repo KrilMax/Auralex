@@ -1,11 +1,13 @@
 import { updateBook } from '@/lib/firebase';
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ReaderSettings, Book } from '@/lib/types';
+import { ReaderSettings, Book, Bookmark as BookBookmark } from '@/lib/types';
+import BookmarksDrawer from '@/components/BookmarksDrawer';
 import ReaderSettingsDrawer from '@/components/ReaderSettingsDrawer';
 import SemanticSearchModal from '@/components/SemanticSearchModal';
 import TTSControlPanel from '@/components/TTSControlPanel';
 import { Button } from '@/components/ui/button';
+import { BookmarkPlus } from 'lucide-react';
 import {
   doc,
   getDoc,
@@ -16,6 +18,7 @@ import {
   Settings,
   Search,
   Volume2,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -153,6 +156,8 @@ const generatedPages = React.useMemo(() => {
   const result: Page[] = [];
 
   let currentContent: string[] = [];
+  let currentLength = 0;
+
   let currentChapterIndex = 0;
   let startsChapter = false;
   let currentTitle = '';
@@ -168,6 +173,7 @@ const generatedPages = React.useMemo(() => {
         });
 
         currentContent = [];
+        currentLength = 0;
       }
 
       currentChapterIndex =
@@ -185,8 +191,11 @@ const generatedPages = React.useMemo(() => {
       block.content
     );
 
+    currentLength +=
+      block.content.length;
+
     if (
-      currentContent.length >= 5
+      currentLength >= 3500
     ) {
       result.push({
         content: currentContent.join(
@@ -200,6 +209,7 @@ const generatedPages = React.useMemo(() => {
       });
 
       currentContent = [];
+      currentLength = 0;
 
       startsChapter = false;
     }
@@ -270,6 +280,11 @@ useEffect(() => {
 ]);
 
   const [showTTS, setShowTTS] = useState(false);
+
+  const [
+    showBookmarks,
+    setShowBookmarks
+  ] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(
@@ -501,10 +516,255 @@ const handleReaderClick = (
   );
 };
 
+const [
+  selectedText,
+  setSelectedText,
+] = useState('');
+
+const [
+  showBookmarkButton,
+  setShowBookmarkButton,
+] = useState(false);
+
+const [
+  bookmarkButtonPosition,
+  setBookmarkButtonPosition,
+] = useState({
+  x: 0,
+  y: 0,
+});
+
+useEffect(() => {
+  const handleSelection = () => {
+    const selection =
+      window.getSelection();
+
+    const text =
+      selection
+        ?.toString()
+        .trim();
+
+    if (!text) {
+      setShowBookmarkButton(
+        false
+      );
+
+      return;
+    }
+
+    const range =
+      selection?.getRangeAt(0);
+
+    if (!range) return;
+
+    const container =
+      contentRef.current;
+
+    if (!container) return;
+
+    if (
+      !container.contains(
+        range.commonAncestorContainer
+      )
+    ) {
+      setShowBookmarkButton(false);
+
+      return;
+    }
+
+    const target =
+      range.commonAncestorContainer
+        .parentElement;
+
+      if (
+      !target?.closest(
+        '.font-reading'
+      )
+    ) {
+      setShowBookmarkButton(false);
+
+      return;
+    }
+    
+        if (
+      target?.closest('button')
+    ) {
+      setShowBookmarkButton(false);
+      return;
+    }
+
+    if (
+      !container.contains(
+        range.commonAncestorContainer
+      )
+    ) {
+      setShowBookmarkButton(false);
+
+      return;
+    }
+
+    const rect =
+      range.getBoundingClientRect();
+
+    setSelectedText(text);
+
+    setBookmarkButtonPosition({
+      x:
+        rect.left +
+        rect.width / 2,
+      y:
+        rect.top - 40,
+    });
+
+    setShowBookmarkButton(
+      true
+    );
+  };
+
+  document.addEventListener(
+    'mouseup',
+    handleSelection
+  );
+
+  return () =>
+    document.removeEventListener(
+      'mouseup',
+      handleSelection
+    );
+}, []);
+
+const [bookmarks, setBookmarks] =
+  useState<BookBookmark[]>(
+    book?.bookmarks ?? []
+  );
+
+  useEffect(() => {
+  setBookmarks(
+    book?.bookmarks ?? []
+  );
+}, [book]);
+
+const addBookmark = async () => {
+  if (!book) return;
+
+  if (!selectedText.trim())
+    return;
+
+  const newBookmark: BookBookmark =
+    {
+      id: crypto.randomUUID(),
+
+      selectedText:
+        selectedText
+          .replace(/[—–]/g, '-')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 80),
+
+      chapterIndex:
+        generatedPages[
+          currentPageIndex
+        ]?.chapterIndex ?? 0,
+
+      pageIndex:
+        currentPageIndex,
+
+      createdAt:
+        Date.now(),
+    };
+
+  const updatedBookmarks = [
+    ...bookmarks,
+    newBookmark,
+  ];
+
+  setBookmarks(
+    updatedBookmarks
+  );
+
+  setShowBookmarkButton(
+    false
+  );
+
+  await updateBook(
+    book.id,
+    {
+      bookmarks:
+        updatedBookmarks,
+    }
+  );
+};
+
+const deleteBookmark = async (
+  bookmarkId: string
+) => {
+  if (!book) return;
+
+  const updatedBookmarks =
+    bookmarks.filter(
+      (bookmark) =>
+        bookmark.id !==
+        bookmarkId
+    );
+
+  setBookmarks(
+    updatedBookmarks
+  );
+
+  await updateBook(
+    book.id,
+    {
+      bookmarks:
+        updatedBookmarks,
+    }
+  );
+};
+
+const handleBookmarkSelect = (
+  bookmark: BookBookmark
+) => {
+  if (
+  typeof bookmark.pageIndex ===
+  'number'
+) {
+  setCurrentPageIndex(
+    bookmark.pageIndex
+  );
+}
+
+  setTimeout(() => {
+    setHighlightedText(
+      bookmark.selectedText
+    );
+  }, 300);
+
+  setShowBookmarks(false);
+};
+
+const [
+  highlightedText,
+  setHighlightedText,
+] = useState('');
+
+useEffect(() => {
+  if (!highlightedText)
+    return;
+
+  const timer =
+    setTimeout(() => {
+      setHighlightedText('');
+    }, 2000);
+
+    console.log(
+  highlightedText
+);
+
+  return () =>
+    clearTimeout(timer);
+}, [highlightedText]);
+
 const contentRef =
   useRef<HTMLDivElement>(null);
-
-
 
   if (loading) {
   return (
@@ -524,8 +784,6 @@ const contentRef =
       </div>
     );
   }
-
-
 
   const themeClass = settings.theme === 'light' ? 'reader-light' : settings.theme === 'sepia' ? 'reader-sepia' : '';
 
@@ -559,6 +817,9 @@ const contentRef =
               </div>
             </div>
             <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => setShowBookmarks(true)} className="text-muted-foreground">
+                <Bookmark className="w-5 h-5" />
+              </Button>
               <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)} className="text-muted-foreground">
                 <Search className="w-5 h-5" />
               </Button>
@@ -611,8 +872,26 @@ const contentRef =
                   {chapter.content.split('\n\n').map((para, j) => (
                     <p
                       key={j}
-                      className="text-foreground/90 font-reading"
-                      style={{ marginBottom: `${settings.paragraphSpacing}em` }}
+                      className={`
+                        text-foreground/90
+                        font-reading
+                        transition-colors
+                        duration-500
+                        rounded-md
+                        text-justify
+                        ${
+                          highlightedText &&
+                          para
+                            .replace(/[—–]/g, '-')
+                            .replace(/\s+/g, ' ')
+                            .includes(highlightedText)
+                            ? 'bg-primary/15'
+                            : 'bg-transparent'
+                        }
+                      `}
+                      style={{
+                        marginBottom: `${settings.paragraphSpacing}em`,
+                      }}
                     >
                       {para}
                     </p>
@@ -638,17 +917,36 @@ const contentRef =
                 currentPageIndex
               ]?.content
                 ?.split('\n\n')
-                .map((para, j) => (
-                  <p
-                    key={j}
-                    className="text-foreground/90 font-reading"
-                    style={{
-                      marginBottom: `${settings.paragraphSpacing}em`,
-                    }}
-                  >
-                    {para}
-                  </p>
-                ))}
+                .map((para, j) => {
+                  return (
+                    <p
+                      key={j}
+                      className={`
+                        text-foreground/90
+                        font-reading
+                        transition-colors
+                        duration-500
+                        rounded-md
+                        text-justify
+                        ${
+                          highlightedText &&
+                          para
+                            .replace(/[—–]/g, '-')
+                            .replace(/\s+/g, ' ')
+                            .includes(highlightedText)
+                            ? 'bg-primary/15'
+                            : 'bg-transparent'
+                        }
+                      `}
+                      style={{
+                        marginBottom: `${settings.paragraphSpacing}em`,
+                      }}
+                    >
+                      {para}
+                    </p>
+                  );
+                })}
+                
               {/* Pagination controls */}
               <div className="flex items-center justify-between mt-12 pt-8 border-t border-border">
                 <Button
@@ -699,6 +997,19 @@ const contentRef =
         settings={settings}
         onChange={setSettings}
       />
+      <BookmarksDrawer
+        open={showBookmarks}
+        bookmarks={bookmarks}
+        onDelete={
+          deleteBookmark
+        }
+        onSelect={
+          handleBookmarkSelect
+        }
+        onClose={() =>
+          setShowBookmarks(false)
+        }
+      />
       <SemanticSearchModal
         open={showSearch}
         onClose={() => setShowSearch(false)}
@@ -708,6 +1019,33 @@ const contentRef =
         }}
       />
       <TTSControlPanel visible={showTTS} onClose={() => setShowTTS(false)} />
+
+      {
+        showBookmarkButton && (
+          <Button
+            size="icon"
+            className="
+              fixed
+              z-50
+              shadow-lg
+              animate-in
+              fade-in
+            "
+            style={{
+              left:
+                bookmarkButtonPosition.x,
+              top:
+                bookmarkButtonPosition.y,
+              transform:
+                'translateX(-50%)',
+            }}
+            onClick={addBookmark}
+          >
+            <BookmarkPlus className="h-4 w-4" />
+          </Button>
+        )
+      }
+      
     </div>
   );
 };
