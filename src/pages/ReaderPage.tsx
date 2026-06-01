@@ -8,6 +8,8 @@ import SemanticSearchModal from '@/components/SemanticSearchModal';
 import TTSControlPanel from '@/components/TTSControlPanel';
 import { Button } from '@/components/ui/button';
 import { BookmarkPlus } from 'lucide-react';
+import { generatePages } from '@/lib/pagination';
+import { useBookLayout } from '@/hooks/useBookLayout';
 import {
   doc,
   getDoc,
@@ -54,16 +56,6 @@ const ReaderPage: React.FC = () => {
   const navigate = useNavigate();
 const [book, setBook] =
   useState<Book | null>(null);
-
-
-  useEffect(() => {
-  if (!book) return;
-
-  console.log(
-    'FIRST CHAPTER:',
-    book.chapters[0].content
-  );
-}, [book]);
 
 const [loading, setLoading] =
   useState(true);
@@ -135,6 +127,20 @@ useEffect(() => {
       ? JSON.parse(saved)
       : defaultSettings;
   });
+
+  const layout = useBookLayout(book);
+
+useEffect(() => {
+  console.log(layout);
+}, [layout]);
+
+useEffect(() => {
+  console.log(
+    'PROGRESS:',
+    layout.progress
+  );
+}, [layout.progress]);
+
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const bookBlocks = React.useMemo(() => {
@@ -177,13 +183,33 @@ useEffect(() => {
     .join('\n\n');
 }, [book]);
 
-const fullBookWords = React.useMemo(
+const generatedPagesV2 = React.useMemo(
   () =>
-    fullBookText
-      .split(/\s+/)
-      .filter(Boolean),
-  [fullBookText]
+    generatePages(
+      fullBookText,
+      {
+        pageHeight: 567,
+        pageWidth: settings.contentWidth,
+        fontSize: settings.fontSize,
+        lineHeight: settings.lineHeight,
+      }
+    ),
+  [
+    fullBookText,
+    settings.contentWidth,
+    settings.fontSize,
+    settings.lineHeight,
+  ]
 );
+
+const pagesToRender = generatedPagesV2;
+
+useEffect(() => {
+  console.log(
+    'PAGES V2:',
+    generatedPagesV2.length
+  );
+}, [generatedPagesV2]);
 
 const generatedPages = React.useMemo(() => {
   if (!book) return [];
@@ -407,6 +433,48 @@ useEffect(() => {
   generatedPages.length,
   positionRestored,
 ]);
+
+useEffect(() => {
+  if (
+    generatedPages.length === 0
+  ) {
+    return;
+  }
+
+  const progress =
+    currentPageIndex /
+    Math.max(
+      1,
+      generatedPages.length - 1
+    );
+
+  const offset = Math.floor(
+    progress *
+    layout.fullText.length
+  );
+
+  layout.setCurrentOffset(
+    offset
+  );
+}, [
+  currentPageIndex,
+  generatedPages.length,
+  layout,
+]);
+
+useEffect(() => {
+  console.log(
+    'OFFSET:',
+    layout.currentOffset
+  );
+}, [layout.currentOffset]);
+
+useEffect(() => {
+  console.log(
+    'LAYOUT PAGES:',
+    layout.pages.length
+  );
+}, [layout.pages.length]);
 
 useEffect(() => {
   if (
@@ -813,6 +881,18 @@ useEffect(() => {
     clearTimeout(timer);
 }, [highlightedText]);
 
+const measureRef =
+  useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+  if (!measureRef.current) return;
+
+  console.log(
+    'MEASURE HEIGHT:',
+    measureRef.current.clientHeight
+  );
+}, []);
+
 const contentRef =
   useRef<HTMLDivElement>(null);
 
@@ -1052,6 +1132,25 @@ const paginationRef =
         </div>
       </div>
 
+      <div
+        ref={measureRef}
+        className="
+          fixed
+          invisible
+          pointer-events-none
+          -z-50
+          overflow-hidden
+        "
+        style={{
+          width: `${settings.contentWidth}px`,
+          fontFamily: settings.fontFamily,
+          fontSize: `${settings.fontSize}px`,
+          lineHeight: settings.lineHeight,
+          height: '567px',
+          whiteSpace: 'pre-wrap',
+        }}
+      />
+    
       {/* Panels */}
       <ReaderSettingsDrawer
         open={showSettings}
