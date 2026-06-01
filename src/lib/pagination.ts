@@ -12,9 +12,14 @@ export interface PaginationOptions {
   lineHeight: number;
 }
 
+export interface TextMeasurer {
+  measure: (text: string) => number;
+}
+
 export function generatePages(
   text: string,
-  options: PaginationOptions
+  options: PaginationOptions,
+  measurer: TextMeasurer
 ): GeneratedPage[] {
   if (!text.trim()) {
     return [];

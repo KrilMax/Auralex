@@ -8,7 +8,6 @@ import SemanticSearchModal from '@/components/SemanticSearchModal';
 import TTSControlPanel from '@/components/TTSControlPanel';
 import { Button } from '@/components/ui/button';
 import { BookmarkPlus } from 'lucide-react';
-import { generatePages } from '@/lib/pagination';
 import { useBookLayout } from '@/hooks/useBookLayout';
 import {
   doc,
@@ -61,9 +60,6 @@ const [loading, setLoading] =
   useState(true);
 
 const [currentPage, setCurrentPage] = useState(0);
-
-const [pages, setPages] =
-  useState<Page[]>([]);
 
 const [currentPageIndex, setCurrentPageIndex] =
   useState(0);
@@ -128,21 +124,56 @@ useEffect(() => {
       : defaultSettings;
   });
 
-  const layout = useBookLayout(book);
-
-useEffect(() => {
-  console.log(layout);
-}, [layout]);
-
-useEffect(() => {
-  console.log(
-    'PROGRESS:',
-    layout.progress
-  );
-}, [layout.progress]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+
+  const [pageHeight, setPageHeight] =
+  useState(567);
+
+  const measureRef =
+  useRef<HTMLDivElement>(null);
+
+  const contentRef =
+  useRef<HTMLDivElement>(null);
+
+  const paginationRef =
+  useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+  if (!measureRef.current) {
+    return;
+  }
+
+  setPageHeight(
+    measureRef.current.clientHeight
+  );
+}, []);
+
+const layout = useBookLayout(book, settings, { pageHeight, });
+
+const textMeasurer = React.useMemo(
+  () => ({
+    measure: (
+      text: string
+    ) => {
+
+      if (!measureRef.current) {
+        return 0;
+      }
+
+      measureRef.current.textContent =
+        text;
+
+      return (
+        measureRef.current
+          .scrollHeight
+      );
+    },
+  }),
+  []
+);
+
   const bookBlocks = React.useMemo(() => {
     if (!book) return [];
 
@@ -182,34 +213,6 @@ useEffect(() => {
     )
     .join('\n\n');
 }, [book]);
-
-const generatedPagesV2 = React.useMemo(
-  () =>
-    generatePages(
-      fullBookText,
-      {
-        pageHeight: 567,
-        pageWidth: settings.contentWidth,
-        fontSize: settings.fontSize,
-        lineHeight: settings.lineHeight,
-      }
-    ),
-  [
-    fullBookText,
-    settings.contentWidth,
-    settings.fontSize,
-    settings.lineHeight,
-  ]
-);
-
-const pagesToRender = generatedPagesV2;
-
-useEffect(() => {
-  console.log(
-    'PAGES V2:',
-    generatedPagesV2.length
-  );
-}, [generatedPagesV2]);
 
 const generatedPages = React.useMemo(() => {
   if (!book) return [];
@@ -461,20 +464,6 @@ useEffect(() => {
   generatedPages.length,
   layout,
 ]);
-
-useEffect(() => {
-  console.log(
-    'OFFSET:',
-    layout.currentOffset
-  );
-}, [layout.currentOffset]);
-
-useEffect(() => {
-  console.log(
-    'LAYOUT PAGES:',
-    layout.pages.length
-  );
-}, [layout.pages.length]);
 
 useEffect(() => {
   if (
@@ -873,31 +862,9 @@ useEffect(() => {
       setHighlightedText('');
     }, 2000);
 
-    console.log(
-  highlightedText
-);
-
   return () =>
     clearTimeout(timer);
 }, [highlightedText]);
-
-const measureRef =
-  useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-  if (!measureRef.current) return;
-
-  console.log(
-    'MEASURE HEIGHT:',
-    measureRef.current.clientHeight
-  );
-}, []);
-
-const contentRef =
-  useRef<HTMLDivElement>(null);
-
-const paginationRef =
-  useRef<HTMLDivElement>(null);
 
   if (loading) {
   return (
@@ -1146,10 +1113,11 @@ const paginationRef =
           fontFamily: settings.fontFamily,
           fontSize: `${settings.fontSize}px`,
           lineHeight: settings.lineHeight,
-          height: '567px',
+          height: `${pageHeight}px`,
           whiteSpace: 'pre-wrap',
         }}
-      />
+      >
+      </div>
     
       {/* Panels */}
       <ReaderSettingsDrawer

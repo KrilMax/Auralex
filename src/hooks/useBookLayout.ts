@@ -1,5 +1,5 @@
-import { Book } from '@/lib/types';
-import { useMemo, useState } from 'react';
+import { Book, ReaderSettings } from '@/lib/types';
+import { useMemo, useState, useEffect } from 'react';
 
 export interface BookLayout {
   pages: LayoutPage[];
@@ -22,8 +22,14 @@ export interface LayoutPage {
   pageNumber: number;
 }
 
+export interface LayoutMetrics {
+  pageHeight: number;
+}
+
 export function useBookLayout(
-  book: Book | null
+  book: Book | null,
+  settings: ReaderSettings,
+  metrics: LayoutMetrics
 ): BookLayout {
 
   const fullText = useMemo(() => {
@@ -39,7 +45,26 @@ export function useBookLayout(
       .join('\n\n');
   }, [book]);
 
+useEffect(() => {
+  console.log(
+    'LAYOUT HEIGHT:',
+    metrics.pageHeight
+  );
+}, [metrics.pageHeight]);
 
+useEffect(() => {
+  console.log({
+    pageHeight: metrics.pageHeight,
+    contentWidth: settings.contentWidth,
+    fontSize: settings.fontSize,
+    lineHeight: settings.lineHeight,
+  });
+}, [
+  metrics.pageHeight,
+  settings.contentWidth,
+  settings.fontSize,
+  settings.lineHeight,
+]);
 
   const [currentOffset, setCurrentOffset] =
   useState(0);
@@ -91,6 +116,8 @@ export function useBookLayout(
 
         return result;
         }, [fullText]);
+
+        
 
     return {
         pages,
