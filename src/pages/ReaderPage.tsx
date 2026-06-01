@@ -150,8 +150,6 @@ useEffect(() => {
   );
 }, []);
 
-const layout = useBookLayout(book, settings, { pageHeight, });
-
 const textMeasurer = React.useMemo(
   () => ({
     measure: (
@@ -173,6 +171,13 @@ const textMeasurer = React.useMemo(
   }),
   []
 );
+
+const layout = useBookLayout(book, settings, { pageHeight, }, textMeasurer);
+
+const currentLayoutPage =
+  layout.pages[
+    currentPageIndex
+  ];
 
   const bookBlocks = React.useMemo(() => {
     if (!book) return [];
@@ -313,7 +318,7 @@ const generatedPages = React.useMemo(() => {
 useEffect(() => {
   if (!book) return;
 
-  if (generatedPages.length === 0)
+  if (layout.pages.length === 0)
     return;
 
   if (
@@ -323,7 +328,7 @@ useEffect(() => {
     setCurrentPageIndex(
       Math.min(
         book.lastPageIndex,
-        generatedPages.length - 1
+        layout.pages.length - 1
       )
     );
 
@@ -342,20 +347,20 @@ useEffect(() => {
 
   const page = Math.floor(
     (book.readingProgress / 100) *
-    (generatedPages.length - 1)
+    (layout.pages.length - 1)
   );
 
   setCurrentPageIndex(
     Math.min(
       page,
-      generatedPages.length - 1
+      layout.pages.length - 1
     )
   );
 
   setPositionRestored(true);
 }, [
   book,
-  generatedPages.length,
+  layout.pages.length,
 ]);
 
   const [showTTS, setShowTTS] = useState(false);
@@ -413,7 +418,7 @@ useEffect(() => {
 useEffect(() => {
   if (!book) return;
 
-  if (generatedPages.length === 0)
+  if (layout.pages.length === 0)
     return;
 
   if (!positionRestored)
@@ -422,7 +427,7 @@ useEffect(() => {
   const progress =
     (
       currentPageIndex /
-      (generatedPages.length - 1)
+      (layout.pages.length - 1)
     ) * 100;
 
   updateBook(book.id, {
@@ -433,13 +438,13 @@ useEffect(() => {
 
 }, [
   currentPageIndex,
-  generatedPages.length,
+  layout.pages.length,
   positionRestored,
 ]);
 
 useEffect(() => {
   if (
-    generatedPages.length === 0
+    layout.pages.length === 0
   ) {
     return;
   }
@@ -448,7 +453,7 @@ useEffect(() => {
     currentPageIndex /
     Math.max(
       1,
-      generatedPages.length - 1
+      layout.pages.length - 1
     );
 
   const offset = Math.floor(
@@ -461,7 +466,7 @@ useEffect(() => {
   );
 }, [
   currentPageIndex,
-  generatedPages.length,
+  layout.pages.length,
   layout,
 ]);
 
@@ -548,7 +553,7 @@ useEffect(() => {
       setCurrentPageIndex(
         p =>
           Math.min(
-            generatedPages.length - 1,
+            layout.pages.length - 1,
             p + 1
           )
       );
@@ -579,7 +584,7 @@ useEffect(() => {
     );
 }, [
   settings.readingMode,
-  generatedPages.length,
+  layout.pages.length,
 ]);
 
 const handleReaderClick = (
@@ -610,7 +615,7 @@ const handleReaderClick = (
     setCurrentPageIndex(
       p =>
         Math.min(
-          generatedPages.length - 1,
+          layout.pages.length - 1,
           p + 1
         )
     );
@@ -938,7 +943,7 @@ useEffect(() => {
               style={{
                 width: `${(
                   (currentPageIndex + 1) /
-                  generatedPages.length
+                  layout.pages.length
                 ) * 100}%`
               }}
             />
@@ -1018,9 +1023,8 @@ useEffect(() => {
                 </h2>
               )}
 
-              {generatedPages[
-                currentPageIndex
-              ]?.content
+              {currentLayoutPage
+                ?.content
                 ?.split('\n\n')
                 .map((para, j) => {
                   return (
@@ -1075,7 +1079,7 @@ useEffect(() => {
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  {currentPageIndex + 1} / {generatedPages.length}
+                  {currentPageIndex + 1} / {layout.pages.length}
                 </span>
                 <Button
                   variant="ghost"
@@ -1083,12 +1087,12 @@ useEffect(() => {
                     setCurrentPageIndex(
                       p =>
                         Math.min(
-                          generatedPages.length - 1,
+                          layout.pages.length - 1,
                           p + 1
                         )
                     )
                    }
-                  disabled={currentPageIndex === generatedPages.length - 1}
+                  disabled={currentPageIndex === layout.pages.length - 1}
                   className="gap-2 text-muted-foreground"
                 >
                   Next <ChevronRight className="w-4 h-4" />

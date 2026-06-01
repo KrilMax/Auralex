@@ -1,5 +1,7 @@
 import { Book, ReaderSettings } from '@/lib/types';
+import { TextMeasurer } from '@/lib/pagination';
 import { useMemo, useState, useEffect } from 'react';
+import { generatePages, } from '@/lib/pagination';
 
 export interface BookLayout {
   pages: LayoutPage[];
@@ -29,7 +31,8 @@ export interface LayoutMetrics {
 export function useBookLayout(
   book: Book | null,
   settings: ReaderSettings,
-  metrics: LayoutMetrics
+  metrics: LayoutMetrics,
+  measurer: TextMeasurer
 ): BookLayout {
 
   const fullText = useMemo(() => {
@@ -44,27 +47,6 @@ export function useBookLayout(
       )
       .join('\n\n');
   }, [book]);
-
-useEffect(() => {
-  console.log(
-    'LAYOUT HEIGHT:',
-    metrics.pageHeight
-  );
-}, [metrics.pageHeight]);
-
-useEffect(() => {
-  console.log({
-    pageHeight: metrics.pageHeight,
-    contentWidth: settings.contentWidth,
-    fontSize: settings.fontSize,
-    lineHeight: settings.lineHeight,
-  });
-}, [
-  metrics.pageHeight,
-  settings.contentWidth,
-  settings.fontSize,
-  settings.lineHeight,
-]);
 
   const [currentOffset, setCurrentOffset] =
   useState(0);
@@ -83,41 +65,45 @@ useEffect(() => {
     fullText,
     ]);
 
-    const pages = useMemo(() => {
-        if (!fullText) {
-            return [];
-        }
+    const [pages, setPages] =
+  useState<LayoutPage[]>([]);
 
-        const result: LayoutPage[] = [];
+  useEffect(() => {
+  if (!fullText) {
+    setPages([]);
+    return;
+  }
 
-        const chunkSize = 3000;
+  const generated =
+    generatePages(
+      fullText,
+      {
+        pageHeight:
+          metrics.pageHeight,
+        pageWidth:
+          settings.contentWidth,
+        fontSize:
+          settings.fontSize,
+        lineHeight:
+          settings.lineHeight,
+      },
+      measurer
+    );
 
-        for (
-            let start = 0;
-            start < fullText.length;
-            start += chunkSize
-        ) {
-            const end = Math.min(
-            start + chunkSize,
-            fullText.length
-            );
+    console.log(
+  'LAYOUT PAGES:',
+  generated.length
+);
 
-            result.push({
-            content: fullText.slice(
-                start,
-                end
-            ),
-            startOffset: start,
-            endOffset: end,
-            pageNumber:
-                result.length + 1,
-            });
-        }
-
-        return result;
-        }, [fullText]);
-
-        
+  setPages(generated);
+}, [
+  fullText,
+  metrics.pageHeight,
+  settings.contentWidth,
+  settings.fontSize,
+  settings.lineHeight,
+  measurer,
+]);
 
     return {
         pages,

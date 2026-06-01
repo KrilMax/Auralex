@@ -25,9 +25,16 @@ export function generatePages(
     return [];
   }
 
+  console.log(
+  'PAGINATION TEST:',
+  measurer.measure(
+    'Привет '.repeat(1000)
+  )
+);
+
 const pages: GeneratedPage[] = [];
 
-const chunkSize = 3000;
+const chunkSize = 5000;
 
 for (
 let start = 0;
