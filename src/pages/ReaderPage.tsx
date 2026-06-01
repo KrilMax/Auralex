@@ -31,6 +31,12 @@ interface Page {
   startsChapter: boolean;
 
   chapterTitle?: string;
+
+  startOffset: number;
+
+  endOffset: number;
+
+  pageNumber: number;
 }
 
 const defaultSettings: ReaderSettings = {
@@ -48,6 +54,16 @@ const ReaderPage: React.FC = () => {
   const navigate = useNavigate();
 const [book, setBook] =
   useState<Book | null>(null);
+
+
+  useEffect(() => {
+  if (!book) return;
+
+  console.log(
+    'FIRST CHAPTER:',
+    book.chapters[0].content
+  );
+}, [book]);
 
 const [loading, setLoading] =
   useState(true);
@@ -150,6 +166,25 @@ useEffect(() => {
     );
   }, [book]);
 
+  const fullBookText = React.useMemo(() => {
+  if (!book) return '';
+
+  return book.chapters
+    .map(
+      chapter =>
+        `${chapter.title}\n\n${chapter.content}`
+    )
+    .join('\n\n');
+}, [book]);
+
+const fullBookWords = React.useMemo(
+  () =>
+    fullBookText
+      .split(/\s+/)
+      .filter(Boolean),
+  [fullBookText]
+);
+
 const generatedPages = React.useMemo(() => {
   if (!book) return [];
 
@@ -170,6 +205,9 @@ const generatedPages = React.useMemo(() => {
           chapterIndex: currentChapterIndex,
           startsChapter,
           chapterTitle: currentTitle,
+          startOffset: 0,
+          endOffset: 0,
+          pageNumber: result.length + 1,
         });
 
         currentContent = [];
@@ -206,6 +244,9 @@ const generatedPages = React.useMemo(() => {
         startsChapter,
         chapterTitle:
           currentTitle,
+        startOffset: 0,
+        endOffset: 0,
+        pageNumber: result.length + 1,
       });
 
       currentContent = [];
@@ -225,11 +266,20 @@ const generatedPages = React.useMemo(() => {
       startsChapter,
       chapterTitle:
         currentTitle,
+      startOffset: 0,
+      endOffset: 0,
+      pageNumber: result.length + 1,
     });
   }
 
   return result;
-}, [book, bookBlocks]);
+}, [
+  book,
+  bookBlocks,
+  settings.fontSize,
+  settings.lineHeight,
+  settings.contentWidth,
+]);
 
 useEffect(() => {
   if (!book) return;
@@ -766,6 +816,9 @@ useEffect(() => {
 const contentRef =
   useRef<HTMLDivElement>(null);
 
+const paginationRef =
+  useRef<HTMLDivElement>(null);
+
   if (loading) {
   return (
     <div className="flex min-h-screen items-center justify-center">
@@ -852,7 +905,6 @@ const contentRef =
         onClick={handleReaderClick}
       >
         <div
-          ref={contentRef}
           className="mx-auto"
           style={{
             maxWidth: `${settings.contentWidth}px`,
@@ -901,7 +953,13 @@ const contentRef =
             </div>
           ) : (
             // Pagination mode
-            <div>
+            <div className="flex flex-col h-[calc(100vh-140px)]">
+              
+            <div
+              className="flex-1 overflow-hidden"
+              ref={contentRef}
+            >
+
               {generatedPages[currentPageIndex]
                 ?.startsChapter && (
                 <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
@@ -946,9 +1004,13 @@ const contentRef =
                     </p>
                   );
                 })}
-                
+                </div>
+
               {/* Pagination controls */}
-              <div className="flex items-center justify-between mt-12 pt-8 border-t border-border">
+              <div 
+                ref={paginationRef}
+                className="flex items-center justify-between mt-12 pt-8 border-t border-border"
+              >
                 <Button
                   variant="ghost"
                   onClick={() =>
