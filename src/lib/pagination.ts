@@ -34,7 +34,7 @@ while (start < text.length) {
   let low = start + 100;
 
   let high = Math.min(
-    start + 5000,
+    start + 15000,
     text.length
   );
 

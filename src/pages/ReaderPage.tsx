@@ -9,6 +9,11 @@ import TTSControlPanel from '@/components/TTSControlPanel';
 import { Button } from '@/components/ui/button';
 import { BookmarkPlus } from 'lucide-react';
 import { useBookLayout } from '@/hooks/useBookLayout';
+import { PageContent } from '@/components/PageContent';
+import { HiddenPaginator } from '@/components/HiddenPaginator';
+import {
+  LayoutPage
+} from '@/hooks/useBookLayout';
 import {
   doc,
   getDoc,
@@ -23,22 +28,6 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-
-interface Page {
-  content: string;
-
-  chapterIndex: number;
-
-  startsChapter: boolean;
-
-  chapterTitle?: string;
-
-  startOffset: number;
-
-  endOffset: number;
-
-  pageNumber: number;
-}
 
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
@@ -131,6 +120,13 @@ useEffect(() => {
   const [pageHeight, setPageHeight] =
   useState(567);
 
+const [
+  domPages,
+  setDomPages
+] = useState<
+  LayoutPage[]
+>([]);
+
   const measureRef =
   useRef<HTMLDivElement>(null);
 
@@ -141,85 +137,48 @@ useEffect(() => {
   useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-  if (!measureRef.current) {
+  if (!contentRef.current) {
     return;
   }
 
-  setPageHeight(
-    measureRef.current.clientHeight
+  console.log(
+    'CONTENT HEIGHT:',
+    contentRef.current.clientHeight
   );
 }, []);
 
-const textMeasurer = React.useMemo(
-  () => ({
-    measure: (
-      text: string
-    ) => {
+  useEffect(() => {
+    if (!contentRef.current) {
+      return;
+    }
 
-      if (!measureRef.current) {
-        return 0;
-      }
+    console.log(
+      'CONTENT HEIGHT:',
+      contentRef.current.clientHeight
+    );
 
-      measureRef.current.textContent =
-        text;
+    setPageHeight(
+      contentRef.current.clientHeight
+    );
+  }, [
+    settings.fontSize,
+    settings.lineHeight,
+    settings.paragraphSpacing,
+    settings.contentWidth,
+  ]);
 
-      return (
-        measureRef.current
-          .scrollHeight
-      );
-    },
-  }),
-  []
+const layout = useBookLayout(
+  book,
+  settings,
+  { pageHeight }
 );
 
-const layout = useBookLayout(book, settings, { pageHeight, }, textMeasurer);
-
 const currentLayoutPage =
-  layout.pages[
+  domPages[
     currentPageIndex
   ];
 
-  const bookBlocks = React.useMemo(() => {
-    if (!book) return [];
-
-    return book.chapters.flatMap(
-      (chapter, chapterIndex) => {
-        const paragraphs =
-          chapter.content
-            .split('\n\n')
-            .filter(Boolean);
-
-        return [
-          {
-            type: 'chapter',
-            content: chapter.title,
-            chapterIndex,
-          },
-
-          ...paragraphs.map(
-            (paragraph) => ({
-              type: 'paragraph',
-              content: paragraph,
-              chapterIndex,
-            })
-          ),
-        ];
-      }
-    );
-  }, [book]);
-
-  const fullBookText = React.useMemo(() => {
-  if (!book) return '';
-
-  return book.chapters
-    .map(
-      chapter =>
-        `${chapter.title}\n\n${chapter.content}`
-    )
-    .join('\n\n');
-}, [book]);
-
-const generatedPages = React.useMemo(() => {
+/*const generatedPages = React.useMemo(() => {
   if (!book) return [];
 
   const result: Page[] = [];
@@ -313,12 +272,12 @@ const generatedPages = React.useMemo(() => {
   settings.fontSize,
   settings.lineHeight,
   settings.contentWidth,
-]);
+]);*/
 
 useEffect(() => {
   if (!book) return;
 
-  if (layout.pages.length === 0)
+  if (domPages.length === 0)
     return;
 
   if (
@@ -328,7 +287,7 @@ useEffect(() => {
     setCurrentPageIndex(
       Math.min(
         book.lastPageIndex,
-        layout.pages.length - 1
+        domPages.length - 1
       )
     );
 
@@ -347,20 +306,20 @@ useEffect(() => {
 
   const page = Math.floor(
     (book.readingProgress / 100) *
-    (layout.pages.length - 1)
+    (domPages.length - 1)
   );
 
   setCurrentPageIndex(
     Math.min(
       page,
-      layout.pages.length - 1
+      domPages.length - 1
     )
   );
 
   setPositionRestored(true);
 }, [
   book,
-  layout.pages.length,
+  domPages.length,
 ]);
 
   const [showTTS, setShowTTS] = useState(false);
@@ -418,7 +377,7 @@ useEffect(() => {
 useEffect(() => {
   if (!book) return;
 
-  if (layout.pages.length === 0)
+  if (domPages.length === 0)
     return;
 
   if (!positionRestored)
@@ -427,7 +386,7 @@ useEffect(() => {
   const progress =
     (
       currentPageIndex /
-      (layout.pages.length - 1)
+      (domPages.length - 1)
     ) * 100;
 
   updateBook(book.id, {
@@ -438,13 +397,13 @@ useEffect(() => {
 
 }, [
   currentPageIndex,
-  layout.pages.length,
+  domPages.length,
   positionRestored,
 ]);
 
 useEffect(() => {
   if (
-    layout.pages.length === 0
+    domPages.length === 0
   ) {
     return;
   }
@@ -453,7 +412,7 @@ useEffect(() => {
     currentPageIndex /
     Math.max(
       1,
-      layout.pages.length - 1
+      domPages.length - 1
     );
 
   const offset = Math.floor(
@@ -466,7 +425,7 @@ useEffect(() => {
   );
 }, [
   currentPageIndex,
-  layout.pages.length,
+  domPages.length,
   layout,
 ]);
 
@@ -553,7 +512,7 @@ useEffect(() => {
       setCurrentPageIndex(
         p =>
           Math.min(
-            layout.pages.length - 1,
+            domPages.length - 1,
             p + 1
           )
       );
@@ -584,7 +543,7 @@ useEffect(() => {
     );
 }, [
   settings.readingMode,
-  layout.pages.length,
+  domPages.length,
 ]);
 
 const handleReaderClick = (
@@ -615,7 +574,7 @@ const handleReaderClick = (
     setCurrentPageIndex(
       p =>
         Math.min(
-          layout.pages.length - 1,
+          domPages.length - 1,
           p + 1
         )
     );
@@ -773,10 +732,7 @@ const addBookmark = async () => {
           .trim()
           .slice(0, 80),
 
-      chapterIndex:
-        generatedPages[
-          currentPageIndex
-        ]?.chapterIndex ?? 0,
+      chapterIndex: 0,
 
       pageIndex:
         currentPageIndex,
@@ -871,6 +827,13 @@ useEffect(() => {
     clearTimeout(timer);
 }, [highlightedText]);
 
+useEffect(() => {
+  console.log(
+    'DOM PAGES:',
+    domPages.length
+  );
+}, [domPages]);
+
   if (loading) {
   return (
     <div className="flex min-h-screen items-center justify-center">
@@ -912,12 +875,7 @@ useEffect(() => {
               <div className="hidden sm:block">
                 <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{book.title}</p>
                 <p className="text-xs text-muted-foreground">
-                  {
-                    book.chapters[
-                      generatedPages[currentPageIndex]
-                        ?.chapterIndex ?? 0
-                    ]?.title
-                  }
+                  {book.title}
 </p>
               </div>
             </div>
@@ -943,7 +901,7 @@ useEffect(() => {
               style={{
                 width: `${(
                   (currentPageIndex + 1) /
-                  layout.pages.length
+                  domPages.length
                 ) * 100}%`
               }}
             />
@@ -1008,53 +966,29 @@ useEffect(() => {
             <div className="flex flex-col h-[calc(100vh-140px)]">
               
             <div
-              className="flex-1 overflow-hidden"
-              ref={contentRef}
+              className="flex-1"
+              ref={(el) => {
+                contentRef.current = el;
+
+                if (el) {
+                  console.log(
+                    'CONTENT HEIGHT:',
+                    el.clientHeight
+                  );
+                }
+              }}
             >
 
-              {generatedPages[currentPageIndex]
-                ?.startsChapter && (
-                <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
-                   {
-                    generatedPages[
-                      currentPageIndex
-                    ]?.chapterTitle
-                  }
-                </h2>
-              )}
+              <PageContent
+                text={
+                  currentLayoutPage?.content ?? ''
+                }
+                settings={settings}
+                highlightedText={
+                  highlightedText
+                }
+              />
 
-              {currentLayoutPage
-                ?.content
-                ?.split('\n\n')
-                .map((para, j) => {
-                  return (
-                    <p
-                      key={j}
-                      className={`
-                        text-foreground/90
-                        font-reading
-                        transition-colors
-                        duration-500
-                        rounded-md
-                        text-justify
-                        ${
-                          highlightedText &&
-                          para
-                            .replace(/[—–]/g, '-')
-                            .replace(/\s+/g, ' ')
-                            .includes(highlightedText)
-                            ? 'bg-primary/15'
-                            : 'bg-transparent'
-                        }
-                      `}
-                      style={{
-                        marginBottom: `${settings.paragraphSpacing}em`,
-                      }}
-                    >
-                      {para}
-                    </p>
-                  );
-                })}
                 </div>
 
               {/* Pagination controls */}
@@ -1079,7 +1013,7 @@ useEffect(() => {
                   <ChevronLeft className="w-4 h-4" /> Previous
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  {currentPageIndex + 1} / {layout.pages.length}
+                  {currentPageIndex + 1} / {domPages.length}
                 </span>
                 <Button
                   variant="ghost"
@@ -1087,12 +1021,12 @@ useEffect(() => {
                     setCurrentPageIndex(
                       p =>
                         Math.min(
-                          layout.pages.length - 1,
+                          domPages.length - 1,
                           p + 1
                         )
                     )
                    }
-                  disabled={currentPageIndex === layout.pages.length - 1}
+                  disabled={currentPageIndex === domPages.length - 1}
                   className="gap-2 text-muted-foreground"
                 >
                   Next <ChevronRight className="w-4 h-4" />
@@ -1102,27 +1036,16 @@ useEffect(() => {
           )}
         </div>
       </div>
+        
+        <HiddenPaginator
+          text={layout.fullText}
+          settings={settings}
+          pageHeight={pageHeight}
+          onPagesReady={
+            setDomPages
+          }
+        />
 
-      <div
-        ref={measureRef}
-        className="
-          fixed
-          invisible
-          pointer-events-none
-          -z-50
-          overflow-hidden
-        "
-        style={{
-          width: `${settings.contentWidth}px`,
-          fontFamily: settings.fontFamily,
-          fontSize: `${settings.fontSize}px`,
-          lineHeight: settings.lineHeight,
-          height: `${pageHeight}px`,
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-      </div>
-    
       {/* Panels */}
       <ReaderSettingsDrawer
         open={showSettings}

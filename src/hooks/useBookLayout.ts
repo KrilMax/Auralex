@@ -1,7 +1,5 @@
 import { Book, ReaderSettings } from '@/lib/types';
-import { TextMeasurer } from '@/lib/pagination';
 import { useMemo, useState, useEffect } from 'react';
-import { generatePages, } from '@/lib/pagination';
 
 export interface BookLayout {
   pages: LayoutPage[];
@@ -32,7 +30,6 @@ export function useBookLayout(
   book: Book | null,
   settings: ReaderSettings,
   metrics: LayoutMetrics,
-  measurer: TextMeasurer
 ): BookLayout {
 
   const fullText = useMemo(() => {
@@ -65,45 +62,7 @@ export function useBookLayout(
     fullText,
     ]);
 
-    const [pages, setPages] =
-  useState<LayoutPage[]>([]);
-
-  useEffect(() => {
-  if (!fullText) {
-    setPages([]);
-    return;
-  }
-
-  const generated =
-    generatePages(
-      fullText,
-      {
-        pageHeight:
-          metrics.pageHeight,
-        pageWidth:
-          settings.contentWidth,
-        fontSize:
-          settings.fontSize,
-        lineHeight:
-          settings.lineHeight,
-      },
-      measurer
-    );
-
-    console.log(
-  'LAYOUT PAGES:',
-  generated.length
-);
-
-  setPages(generated);
-}, [
-  fullText,
-  metrics.pageHeight,
-  settings.contentWidth,
-  settings.fontSize,
-  settings.lineHeight,
-  measurer,
-]);
+    const pages: LayoutPage[] = [];
 
     return {
         pages,
