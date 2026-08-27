@@ -63,12 +63,9 @@ export interface User {
 
 export interface Bookmark {
   id: string;
-
   selectedText: string;
-
   chapterIndex: number;
-
+  startOffset: number;
+  endOffset: number;
   createdAt: number;
-
-  pageIndex: number;
 }

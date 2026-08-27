@@ -1,18 +1,37 @@
-import { updateBook } from '@/lib/firebase';
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ReaderSettings, Book, Bookmark as BookBookmark } from '@/lib/types';
-import BookmarksDrawer from '@/components/BookmarksDrawer';
-import ReaderSettingsDrawer from '@/components/ReaderSettingsDrawer';
-import SemanticSearchModal from '@/components/SemanticSearchModal';
-import TTSControlPanel from '@/components/TTSControlPanel';
-import { Button } from '@/components/ui/button';
-import { BookmarkPlus } from 'lucide-react';
+import React, {
+  useEffect,
+  useState,
+  useRef,
+} from 'react';
+
+import {
+  useParams,
+  useNavigate,
+} from 'react-router-dom';
+
+import {
+  ReaderSettings,
+  Book,
+  Bookmark as BookBookmark,
+} from '@/lib/types';
+
+import {
+  updateBook,
+  db,
+} from '@/lib/firebase';
+
 import {
   doc,
   getDoc,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+
+import BookmarksDrawer from '@/components/BookmarksDrawer';
+import ReaderSettingsDrawer from '@/components/ReaderSettingsDrawer';
+import SemanticSearchModal from '@/components/SemanticSearchModal';
+import TTSControlPanel from '@/components/TTSControlPanel';
+
+import { Button } from '@/components/ui/button';
+
 import {
   ArrowLeft,
   Settings,
@@ -21,17 +40,10 @@ import {
   Bookmark,
   ChevronLeft,
   ChevronRight,
+
 } from 'lucide-react';
 
-interface Page {
-  content: string;
-
-  chapterIndex: number;
-
-  startsChapter: boolean;
-
-  chapterTitle?: string;
-}
+import { useBookLayout } from '@/hooks/useBookLayout';
 
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
@@ -40,251 +52,285 @@ const defaultSettings: ReaderSettings = {
   lineHeight: 1.8,
   contentWidth: 680,
   paragraphSpacing: 1.5,
-  readingMode: 'scroll',
+  readingMode: 'paginate',
 };
 
 const ReaderPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-const [book, setBook] =
-  useState<Book | null>(null);
 
-const [loading, setLoading] =
-  useState(true);
 
-const [currentPage, setCurrentPage] = useState(0);
+  // =========================================================
+  // BOOK
+  // =========================================================
 
-const [pages, setPages] =
-  useState<Page[]>([]);
+  const [book, setBook] =
+    useState<Book | null>(null);
 
-const [currentPageIndex, setCurrentPageIndex] =
-  useState(0);
+  const [loading, setLoading] =
+    useState(true);
 
-const [
-  positionRestored,
-  setPositionRestored,
-] = useState(false);
+  useEffect(() => {
+    if (loading) return;
 
-const [initialScrollDone, setInitialScrollDone] =
+    const element = pageAreaRef.current;
+
+    if (!element) return;
+
+    const updateSize = () => {
+      const rect = element.getBoundingClientRect();
+
+      setLayoutSize({
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+
+    updateSize();
+
+    const observer = new ResizeObserver(updateSize);
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [loading]);
+
+  useEffect(() => {
+    const loadBook = async () => {
+      if (!id) return;
+
+      try {
+        const docRef =
+          doc(db, 'books', id);
+
+        const snapshot =
+          await getDoc(docRef);
+
+        if (snapshot.exists()) {
+          const loadedBook = {
+            id: snapshot.id,
+            ...snapshot.data(),
+          } as Book;
+
+          setBook(loadedBook);
+        }
+      } catch (error) {
+        console.error(
+          'Failed to load book:',
+          error
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadBook();
+  }, [id]);
+
+  // =========================================================
+  // SETTINGS
+  // =========================================================
+  const [settings, setSettings] =
+    useState<ReaderSettings>(() => {
+      const saved =
+        localStorage.getItem(
+          'reader-settings'
+        );
+      return saved
+        ? JSON.parse(saved)
+        : defaultSettings;
+    });
+
+  const [currentChapterIndex, setCurrentChapterIndex] =
+    useState(book?.lastChapter ?? 0);
+
+  const [currentPageIndex, setCurrentPageIndex] =
+    useState(book?.lastPageIndex ?? 0);
+
+  const [pendingLastPage, setPendingLastPage] =
+    useState(false);
+
+  const [pendingBookmark, setPendingBookmark] =
+    useState<BookBookmark | null>(null);
+
+  const [activeBookmark, setActiveBookmark] =
+    useState<BookBookmark | null>(null);
+
+  const [bookmarkHighlightVisible, setBookmarkHighlightVisible] =
   useState(false);
 
-const [showToolbar, setShowToolbar] = useState(true);
+  const pageAreaRef =
+    useRef<HTMLDivElement>(null);
 
-useEffect(() => {
-  const loadBook = async () => {
-    if (!id) return;
-
-    try {
-      const docRef =
-        doc(db, 'books', id);
-
-      const snapshot =
-        await getDoc(docRef);
-
-      if (snapshot.exists()) {
-        const loadedBook = {
-          id: snapshot.id,
-          ...snapshot.data(),
-        } as Book;
-
-        setBook(loadedBook);
-
-        /*if (
-          typeof loadedBook.lastChapter ===
-          'number'
-        ) {
-          setCurrentPage(
-            loadedBook.lastChapter
-          );
-        }*/
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  loadBook();
-}, [id]);
-
-  const [settings, setSettings] =
-  useState<ReaderSettings>(() => {
-    const saved =
-      localStorage.getItem(
-        'reader-settings'
-      );
-
-    return saved
-      ? JSON.parse(saved)
-      : defaultSettings;
-  });
-  const [showSettings, setShowSettings] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const bookBlocks = React.useMemo(() => {
-    if (!book) return [];
-
-    return book.chapters.flatMap(
-      (chapter, chapterIndex) => {
-        const paragraphs =
-          chapter.content
-            .split('\n\n')
-            .filter(Boolean);
-
-        return [
-          {
-            type: 'chapter',
-            content: chapter.title,
-            chapterIndex,
-          },
-
-          ...paragraphs.map(
-            (paragraph) => ({
-              type: 'paragraph',
-              content: paragraph,
-              chapterIndex,
-            })
-          ),
-        ];
-      }
-    );
-  }, [book]);
-
-const generatedPages = React.useMemo(() => {
-  if (!book) return [];
-
-  const result: Page[] = [];
-
-  let currentContent: string[] = [];
-  let currentLength = 0;
-
-  let currentChapterIndex = 0;
-  let startsChapter = false;
-  let currentTitle = '';
-
-  for (const block of bookBlocks) {
-    if (block.type === 'chapter') {
-      if (currentContent.length > 0) {
-        result.push({
-          content: currentContent.join('\n\n'),
-          chapterIndex: currentChapterIndex,
-          startsChapter,
-          chapterTitle: currentTitle,
-        });
-
-        currentContent = [];
-        currentLength = 0;
-      }
-
-      currentChapterIndex =
-        block.chapterIndex;
-
-      currentTitle =
-        block.content;
-
-      startsChapter = true;
-
-      continue;
-    }
-
-    currentContent.push(
-      block.content
-    );
-
-    currentLength +=
-      block.content.length;
-
-    if (
-      currentLength >= 3500
-    ) {
-      result.push({
-        content: currentContent.join(
-          '\n\n'
-        ),
-        chapterIndex:
-          currentChapterIndex,
-        startsChapter,
-        chapterTitle:
-          currentTitle,
-      });
-
-      currentContent = [];
-      currentLength = 0;
-
-      startsChapter = false;
-    }
-  }
-
-  if (currentContent.length > 0) {
-    result.push({
-      content: currentContent.join(
-        '\n\n'
-      ),
-      chapterIndex:
-        currentChapterIndex,
-      startsChapter,
-      chapterTitle:
-        currentTitle,
+  const [layoutSize, setLayoutSize] =
+    useState({
+      width: 0,
+      height: 0,
     });
-  }
 
-  return result;
-}, [book, bookBlocks]);
-
-useEffect(() => {
+    useEffect(() => {
   if (!book) return;
 
-  if (generatedPages.length === 0)
-    return;
-
-  if (
-    typeof book.lastPageIndex ===
-    'number'
-  ) {
-    setCurrentPageIndex(
-      Math.min(
-        book.lastPageIndex,
-        generatedPages.length - 1
-      )
-    );
-
-    setPositionRestored(
-      true
-    );
-
-    return;
-  }
-
-  if (
-    typeof book.readingProgress !==
-    'number'
-  )
-    return;
-
-  const page = Math.floor(
-    (book.readingProgress / 100) *
-    (generatedPages.length - 1)
+  setCurrentChapterIndex(
+    book.lastChapter ?? 0
   );
 
   setCurrentPageIndex(
-    Math.min(
-      page,
-      generatedPages.length - 1
-    )
+    book.lastPageIndex ?? 0
+  );
+}, [book]);
+
+  const {
+    pages,
+    isCalculating,
+    calculatedChapterIndex,
+  } = useBookLayout(
+    book,
+    currentChapterIndex,
+    settings,
+    layoutSize.width,
+    Math.max(0, layoutSize.height - 20)
   );
 
-  setPositionRestored(true);
+  const goToNextPage = () => {
+    if (!book) return;
+
+    if (currentPageIndex < pages.length - 1) {
+      setCurrentPageIndex(page => page + 1);
+      return;
+    }
+
+    if (
+      currentChapterIndex <
+      book.chapters.length - 1
+    ) {
+      setCurrentChapterIndex(
+        chapter => chapter + 1
+      );
+      setCurrentPageIndex(0);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (!book) return;
+
+    if (currentPageIndex > 0) {
+      setCurrentPageIndex(page => page - 1);
+      return;
+    }
+
+    if (currentChapterIndex > 0) {
+      setPendingLastPage(true);
+
+      setCurrentChapterIndex(
+        chapter => chapter - 1
+      );
+
+      setCurrentPageIndex(0);
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+
+    if (e.deltaY > 0) {
+      goToNextPage();
+    } else if (e.deltaY < 0) {
+      goToPreviousPage();
+    }
+  };
+
+  useEffect(() => {
+    if (isCalculating) {
+      return;
+    }
+
+    if (
+      calculatedChapterIndex !==
+      currentChapterIndex
+    ) {
+      return;
+    }
+
+    if (pages.length === 0) {
+      return;
+    }
+
+    if (pendingLastPage) {
+      setCurrentPageIndex(
+        pages.length - 1
+      );
+
+      setPendingLastPage(false);
+      return;
+    }
+
+    if (pendingBookmark) {
+      const bookmarkPageIndex =
+        pages.findIndex(
+          page =>
+            pendingBookmark.startOffset >=
+              page.startOffset &&
+            pendingBookmark.startOffset <
+              page.endOffset
+        );
+
+      if (bookmarkPageIndex >= 0) {
+        setCurrentPageIndex(
+          bookmarkPageIndex
+        );
+      }
+
+      setPendingBookmark(null);
+      return;
+    }
+
+    setCurrentPageIndex(page =>
+      Math.min(
+        page,
+        pages.length - 1
+      )
+    );
+  }, [
+    pages,
+    isCalculating,
+    pendingLastPage,
+    pendingBookmark,
+    calculatedChapterIndex,
+    currentChapterIndex,
+  ]);
+
+  useEffect(() => {
+  if (!book) return;
+
+  if (isCalculating) return;
+
+  if (
+    calculatedChapterIndex !==
+    currentChapterIndex
+  ) {
+    return;
+  }
+
+  if (pages.length === 0) return;
+
+  updateBook(book.id, {
+    lastChapter:
+      currentChapterIndex,
+
+    lastPageIndex:
+      currentPageIndex,
+  }).catch(console.error);
 }, [
   book,
-  generatedPages.length,
+  currentChapterIndex,
+  currentPageIndex,
+  pages.length,
+  isCalculating,
+  calculatedChapterIndex,
 ]);
-
-  const [showTTS, setShowTTS] = useState(false);
-
-  const [
-    showBookmarks,
-    setShowBookmarks
-  ] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(
@@ -293,761 +339,692 @@ useEffect(() => {
     );
   }, [settings]);
 
-  const lastScrollY = useRef(0);
   
-useEffect(() => {
-  if (!book) return;
 
-  if (initialScrollDone) return;
+  // =========================================================
+  // PANELS
+  // =========================================================
+  const [showSettings, setShowSettings] =
+    useState(false);
 
-  if (settings.readingMode !== 'scroll')
-    return;
+  const [showSearch, setShowSearch] =
+    useState(false);
 
-  const chapter =
-    book.chapters?.[currentPage];
+  const [showTTS, setShowTTS] =
+    useState(false);
 
-  if (!chapter) return;
+  const [showBookmarks, setShowBookmarks] =
+    useState(false);
 
-  const timer = setTimeout(() => {
-    const el = document.getElementById(
-      `chapter-${chapter.id}`
+  // =========================================================
+  // BOOKMARKS
+  // =========================================================
+  const [bookmarks, setBookmarks] =
+    useState<BookBookmark[]>(
+      book?.bookmarks ?? []
     );
 
-    if (el) {
-      el.scrollIntoView({
-        behavior: 'auto',
-        block: 'start',
-      });
+  const [selectedText, setSelectedText] =
+    useState('');
 
-      setInitialScrollDone(true);
-    }
-  }, 500);
+  const [selectedRange, setSelectedRange] =
+    useState<{
+      startOffset: number;
+      endOffset: number;
+    } | null>(null);
 
-  return () => clearTimeout(timer);
-}, [
-  book,
-  currentPage,
-  settings.readingMode,
-  initialScrollDone,
-]);
+  const [bookmarkButtonPosition, setBookmarkButtonPosition] =
+    useState<{
+      x: number;
+      y: number;
+    } | null>(null);
 
-useEffect(() => {
-  if (!book) return;
+const handleTextSelection = () => {
+  const selection = window.getSelection();
 
-  if (generatedPages.length === 0)
-    return;
-
-  if (!positionRestored)
-    return;
-
-  const progress =
-    (
-      currentPageIndex /
-      (generatedPages.length - 1)
-    ) * 100;
-
-  updateBook(book.id, {
-    readingProgress: progress,
-    lastPageIndex:
-      currentPageIndex,
-  }).catch(console.error);
-
-}, [
-  currentPageIndex,
-  generatedPages.length,
-  positionRestored,
-]);
-
-useEffect(() => {
   if (
-    settings.readingMode !== 'scroll'
-  )
+    !selection ||
+    selection.rangeCount === 0
+  ) {
+    setSelectedText('');
+    setSelectedRange(null);
+    setBookmarkButtonPosition(null);
     return;
+  }
 
-  const handleScrollProgress =
-    () => {
-      const chapters =
-        document.querySelectorAll(
-          '[id^="chapter-"]'
-        );
+  const text = selection.toString();
 
-      let visibleChapter = 0;
+  if (!text.trim()) {
+    setSelectedText('');
+    setSelectedRange(null);
+    setBookmarkButtonPosition(null);
+    return;
+  }
 
-      chapters.forEach(
-        (
-          chapter,
-          index
-        ) => {
-          const rect =
-            chapter.getBoundingClientRect();
+  const range = selection.getRangeAt(0);
+  const container = pageAreaRef.current;
+  const page = pages[currentPageIndex];
 
-          if (
-            rect.top <=
-            window.innerHeight * 0.7
-          ) {
-            visibleChapter =
-              index;
-          }
-        }
-      );
+  if (!container || !page) {
+    return;
+  }
 
-      setCurrentPage(
-        visibleChapter
-      );
-    };
-
-  window.addEventListener(
-    'scroll',
-    handleScrollProgress
-  );
-
-  return () =>
-    window.removeEventListener(
-      'scroll',
-      handleScrollProgress
-    );
-}, [
-  settings.readingMode,
-  book
-]);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentY = window.scrollY;
-      if (currentY > lastScrollY.current && currentY > 60) {
-        setShowToolbar(false);
-      } else {
-        setShowToolbar(true);
-      }
-      lastScrollY.current = currentY;
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-  
-useEffect(() => {
   if (
-    settings.readingMode !==
-    'paginate'
-  )
+    !container.contains(range.startContainer) ||
+    !container.contains(range.endContainer)
+  ) {
     return;
+  }
 
-  const handleKeyDown = (
-    e: KeyboardEvent
-  ) => {
-    if (
-      e.key === 'ArrowRight'
-    ) {
-      setCurrentPageIndex(
-        p =>
-          Math.min(
-            generatedPages.length - 1,
-            p + 1
-          )
-      );
-    }
+  const getLineElement = (
+    node: Node
+  ): HTMLElement | null => {
+    const element =
+      node.nodeType === Node.ELEMENT_NODE
+        ? (node as Element)
+        : node.parentElement;
 
-    if (
-      e.key === 'ArrowLeft'
-    ) {
-      setCurrentPageIndex(
-        p =>
-          Math.max(
-            0,
-            p - 1
-          )
-      );
-    }
+    return element?.closest(
+      '[data-start-offset]'
+    ) as HTMLElement | null;
   };
 
-  window.addEventListener(
-    'keydown',
-    handleKeyDown
-  );
+  const startLine =
+    getLineElement(range.startContainer);
 
-  return () =>
-    window.removeEventListener(
-      'keydown',
-      handleKeyDown
-    );
-}, [
-  settings.readingMode,
-  generatedPages.length,
-]);
+  const endLine =
+    getLineElement(range.endContainer);
 
-const handleReaderClick = (
-  e: React.MouseEvent
-) => {
-  if (
-    settings.readingMode !==
-    'paginate'
-  )
-    return;
-
-  const contentRect =
-    contentRef.current?.getBoundingClientRect();
-
-  if (!contentRect) return;
-
-  const x = e.clientX;
-
-  if (x < contentRect.left) {
-    setCurrentPageIndex(
-      p => Math.max(0, p - 1)
-    );
-
+  if (!startLine || !endLine) {
     return;
   }
 
-  if (x > contentRect.right) {
-    setCurrentPageIndex(
-      p =>
-        Math.min(
-          generatedPages.length - 1,
-          p + 1
-        )
-    );
+  const startLineOffset = Number(
+    startLine.dataset.startOffset
+  );
 
+  const endLineOffset = Number(
+    endLine.dataset.startOffset
+  );
+
+  const startOffset =
+    startLineOffset +
+    range.startOffset;
+
+  const endOffset =
+    endLineOffset +
+    range.endOffset;
+
+  if (endOffset <= startOffset) {
     return;
   }
 
-  setShowToolbar(
-    prev => !prev
-  );
+  const rect =
+    range.getBoundingClientRect();
+
+  setSelectedText(text);
+
+  setSelectedRange({
+    startOffset,
+    endOffset,
+  });
+
+  setBookmarkButtonPosition({
+    x:
+      rect.left +
+      rect.width / 2,
+
+    y:
+      Math.max(
+        10,
+        rect.top - 40
+      ),
+  });
 };
-
-const [
-  selectedText,
-  setSelectedText,
-] = useState('');
-
-const [
-  showBookmarkButton,
-  setShowBookmarkButton,
-] = useState(false);
-
-const [
-  bookmarkButtonPosition,
-  setBookmarkButtonPosition,
-] = useState({
-  x: 0,
-  y: 0,
-});
-
-useEffect(() => {
-  const handleSelection = () => {
-    const selection =
-      window.getSelection();
-
-    const text =
-      selection
-        ?.toString()
-        .trim();
-
-    if (!text) {
-      setShowBookmarkButton(
-        false
-      );
-
-      return;
-    }
-
-    const range =
-      selection?.getRangeAt(0);
-
-    if (!range) return;
-
-    const container =
-      contentRef.current;
-
-    if (!container) return;
-
-    if (
-      !container.contains(
-        range.commonAncestorContainer
-      )
-    ) {
-      setShowBookmarkButton(false);
-
-      return;
-    }
-
-    const target =
-      range.commonAncestorContainer
-        .parentElement;
-
-      if (
-      !target?.closest(
-        '.font-reading'
-      )
-    ) {
-      setShowBookmarkButton(false);
-
-      return;
-    }
-    
-        if (
-      target?.closest('button')
-    ) {
-      setShowBookmarkButton(false);
-      return;
-    }
-
-    if (
-      !container.contains(
-        range.commonAncestorContainer
-      )
-    ) {
-      setShowBookmarkButton(false);
-
-      return;
-    }
-
-    const rect =
-      range.getBoundingClientRect();
-
-    setSelectedText(text);
-
-    setBookmarkButtonPosition({
-      x:
-        rect.left +
-        rect.width / 2,
-      y:
-        rect.top - 40,
-    });
-
-    setShowBookmarkButton(
-      true
-    );
-  };
-
-  document.addEventListener(
-    'mouseup',
-    handleSelection
-  );
-
-  return () =>
-    document.removeEventListener(
-      'mouseup',
-      handleSelection
-    );
-}, []);
-
-const [bookmarks, setBookmarks] =
-  useState<BookBookmark[]>(
-    book?.bookmarks ?? []
-  );
-
-  useEffect(() => {
-  setBookmarks(
-    book?.bookmarks ?? []
-  );
-}, [book]);
 
 const addBookmark = async () => {
-  if (!book) return;
-
-  if (!selectedText.trim())
+  if (
+    !book ||
+    !selectedText ||
+    !selectedRange
+  ) {
     return;
+  }
 
-  const newBookmark: BookBookmark =
-    {
-      id: crypto.randomUUID(),
-
-      selectedText:
-        selectedText
-          .replace(/[—–]/g, '-')
-          .replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 80),
-
-      chapterIndex:
-        generatedPages[
-          currentPageIndex
-        ]?.chapterIndex ?? 0,
-
-      pageIndex:
-        currentPageIndex,
-
-      createdAt:
-        Date.now(),
+  try {
+    const bookmark: BookBookmark = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      selectedText,
+      chapterIndex: currentChapterIndex,
+      startOffset: selectedRange.startOffset,
+      endOffset: selectedRange.endOffset,
+      createdAt: Date.now(),
     };
 
-  const updatedBookmarks = [
-    ...bookmarks,
-    newBookmark,
-  ];
+    const updatedBookmarks = [
+      ...bookmarks,
+      bookmark,
+    ];
 
-  setBookmarks(
-    updatedBookmarks
-  );
+    setBookmarks(updatedBookmarks);
 
-  setShowBookmarkButton(
-    false
-  );
+    await updateBook(book.id, {
+      bookmarks: updatedBookmarks,
+    });
 
-  await updateBook(
-    book.id,
-    {
-      bookmarks:
-        updatedBookmarks,
-    }
-  );
+    setSelectedText('');
+    setSelectedRange(null);
+    setBookmarkButtonPosition(null);
+
+    window.getSelection()?.removeAllRanges();
+  } catch (error) {
+    console.error(
+      'Failed to add bookmark:',
+      error
+    );
+  }
 };
 
-const deleteBookmark = async (
-  bookmarkId: string
+  useEffect(() => {
+    setBookmarks(
+      book?.bookmarks ?? []
+    );
+  }, [book]);
+
+  const deleteBookmark = async (
+    bookmarkId: string
+  ) => {
+    if (!book) return;
+
+    const updatedBookmarks =
+      bookmarks.filter(
+        bookmark =>
+          bookmark.id !== bookmarkId
+      );
+
+    setBookmarks(
+      updatedBookmarks
+    );
+
+    await updateBook(
+      book.id,
+      {
+        bookmarks:
+          updatedBookmarks,
+      }
+    );
+  };
+
+  const handleBookmarkSelect = (
+  bookmark: BookBookmark
 ) => {
   if (!book) return;
 
-  const updatedBookmarks =
-    bookmarks.filter(
-      (bookmark) =>
-        bookmark.id !==
-        bookmarkId
-    );
-
-  setBookmarks(
-    updatedBookmarks
-  );
-
-  await updateBook(
-    book.id,
-    {
-      bookmarks:
-        updatedBookmarks,
-    }
-  );
-};
-
-const handleBookmarkSelect = (
-  bookmark: BookBookmark
-) => {
-  if (
-  typeof bookmark.pageIndex ===
-  'number'
-) {
-  setCurrentPageIndex(
-    bookmark.pageIndex
-  );
-}
-
-  setTimeout(() => {
-    setHighlightedText(
-      bookmark.selectedText
-    );
-  }, 300);
-
   setShowBookmarks(false);
-};
 
-const [
-  highlightedText,
-  setHighlightedText,
-] = useState('');
+  setActiveBookmark(bookmark);
+  setBookmarkHighlightVisible(true);
+
+  if (
+    bookmark.chapterIndex ===
+    currentChapterIndex
+  ) {
+    const pageIndex =
+      pages.findIndex(
+        page =>
+          bookmark.startOffset >=
+            page.startOffset &&
+          bookmark.startOffset <
+            page.endOffset
+      );
+
+    if (pageIndex >= 0) {
+      setCurrentPageIndex(pageIndex);
+    }
+
+    return;
+  }
+
+  setCurrentChapterIndex(
+    bookmark.chapterIndex
+  );
+
+  setCurrentPageIndex(0);
+
+  setPendingBookmark(bookmark);
+};
 
 useEffect(() => {
-  if (!highlightedText)
+  if (!bookmarkHighlightVisible) {
     return;
+  }
 
-  const timer =
-    setTimeout(() => {
-      setHighlightedText('');
-    }, 2000);
+  const fadeTimer = window.setTimeout(() => {
+    setBookmarkHighlightVisible(false);
+  }, 5000);
 
-    console.log(
-  highlightedText
-);
+  const clearTimer = window.setTimeout(() => {
+    setActiveBookmark(null);
+  }, 6000);
 
-  return () =>
-    clearTimeout(timer);
-}, [highlightedText]);
+  return () => {
+    window.clearTimeout(fadeTimer);
+    window.clearTimeout(clearTimer);
+  };
+}, [bookmarkHighlightVisible]);
 
-const contentRef =
-  useRef<HTMLDivElement>(null);
-
+  // =========================================================
+  // LOADING
+  // =========================================================
   if (loading) {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      Loading book...
-    </div>
-  );
-}
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        Loading book...
+      </div>
+    );
+  }
 
+  // =========================================================
+  // BOOK NOT FOUND
+  // =========================================================
   if (!book) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <p className="text-muted-foreground mb-4">Book not found</p>
-          <Button onClick={() => navigate('/library')}>Back to Library</Button>
+
+          <p className="text-muted-foreground mb-4">
+            Book not found
+          </p>
+
+          <Button
+            onClick={() =>
+              navigate('/library')
+            }
+          >
+            Back to Library
+          </Button>
+
         </div>
       </div>
     );
   }
 
-  const themeClass = settings.theme === 'light' ? 'reader-light' : settings.theme === 'sepia' ? 'reader-sepia' : '';
 
+  // =========================================================
+  // THEME
+  // =========================================================
+  const themeClass =
+    settings.theme === 'light'
+      ? 'reader-light'
+      : settings.theme === 'sepia'
+        ? 'reader-sepia'
+        : '';
+
+
+  // =========================================================
+  // READER
+  // =========================================================
   return (
     <div
-      className={`min-h-screen bg-background text-foreground transition-colors duration-300 ${themeClass}`}
+      className={`
+        min-h-screen
+        bg-background
+        text-foreground
+        transition-colors
+        duration-300
+        ${themeClass}
+      `}
     >
-      {/* Toolbar */}
-      <div
-        className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 ${
-          showToolbar ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
-        }`}
-        onClick={e => e.stopPropagation()}
-      >
+
+      {/* =====================================================
+          TOOLBAR
+      ===================================================== */}
+      <div className="fixed top-0 inset-x-0 z-30">
         <div className="bg-card/90 backdrop-blur-xl border-b border-border">
           <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
+
+            {/* LEFT */}
             <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => navigate('/library')} className="text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  navigate('/library')
+                }
+                className="text-muted-foreground"
+              >
                 <ArrowLeft className="w-5 h-5" />
               </Button>
+
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{book.title}</p>
+                <p className="text-sm font-medium text-foreground truncate max-w-[200px]">
+                  {book.title}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  {
-                    book.chapters[
-                      generatedPages[currentPageIndex]
-                        ?.chapterIndex ?? 0
-                    ]?.title
-                  }
-</p>
+                  {book?.chapters?.[currentChapterIndex]?.title ?? 'Reader'}
+                </p>
               </div>
             </div>
+
+            {/* RIGHT */}
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" onClick={() => setShowBookmarks(true)} className="text-muted-foreground">
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setShowBookmarks(true)
+                }
+                className="text-muted-foreground"
+              >
                 <Bookmark className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowSearch(true)} className="text-muted-foreground">
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setShowSearch(true)
+                }
+                className="text-muted-foreground"
+              >
                 <Search className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowTTS(!showTTS)} className="text-muted-foreground">
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setShowTTS(true)
+                }
+                className="text-muted-foreground"
+              >
                 <Volume2 className="w-5 h-5" />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} className="text-muted-foreground">
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setShowSettings(true)
+                }
+                className="text-muted-foreground"
+              >
                 <Settings className="w-5 h-5" />
               </Button>
             </div>
           </div>
-          {/* Progress bar */}
-          <div className="h-0.5 bg-border">
-            <div
-              className="h-full gradient-primary transition-all duration-500"
-              style={{
-                width: `${(
-                  (currentPageIndex + 1) /
-                  generatedPages.length
-                ) * 100}%`
-              }}
-            />
-          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div
-        className="min-h-screen pt-20 pb-32 px-4"
-        onClick={handleReaderClick}
+      {/* =====================================================
+          READER AREA
+      ===================================================== */}
+
+      <main
+        className="h-screen pt-20 pb-24 px-4"
+        onWheel={handleWheel}
+        onMouseUp={handleTextSelection}
       >
+        {bookmarkButtonPosition && (
+          <button
+            type="button"
+            onMouseDown={event => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseUp={event => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={event => {
+              event.preventDefault();
+              event.stopPropagation();
+              addBookmark();
+            }}
+            className="fixed z-50 flex h-8 w-8 items-center justify-center rounded-full bg-card border border-violet-400/40 shadow-lg"
+            style={{
+              left: bookmarkButtonPosition.x,
+              top: bookmarkButtonPosition.y,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <Bookmark className="w-4 h-4 text-violet-400" />
+          </button>
+        )}
+
         <div
-          ref={contentRef}
+          ref={pageAreaRef}
           className="mx-auto"
           style={{
-            maxWidth: `${settings.contentWidth}px`,
-            fontFamily: settings.fontFamily,
-            fontSize: `${settings.fontSize}px`,
-            lineHeight: settings.lineHeight,
+            maxWidth:
+              `${settings.contentWidth}px`,
+            height:
+              'calc(100vh - 150px)',
+            fontFamily:
+              settings.fontFamily,
+            fontSize:
+              `${settings.fontSize}px`,
+            lineHeight:
+              settings.lineHeight,
           }}
         >
-          {settings.readingMode === 'scroll' ? (
-            // Scroll mode: show all chapters
-            <div>
-              {book.chapters.map((chapter, i) => (
-                <div key={chapter.id} className="mb-16" id={`chapter-${chapter.id}`}>
-                  <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
-                    {chapter.title}
-                  </h2>
-                  {chapter.content.split('\n\n').map((para, j) => (
-                    <p
-                      key={j}
-                      className={`
-                        text-foreground/90
-                        font-reading
-                        transition-colors
-                        duration-500
-                        rounded-md
-                        text-justify
-                        ${
-                          highlightedText &&
-                          para
-                            .replace(/[—–]/g, '-')
-                            .replace(/\s+/g, ' ')
-                            .includes(highlightedText)
-                            ? 'bg-primary/15'
-                            : 'bg-transparent'
-                        }
-                      `}
-                      style={{
-                        marginBottom: `${settings.paragraphSpacing}em`,
-                      }}
-                    >
-                      {para}
-                    </p>
-                  ))}
+
+          <div className="h-full overflow-hidden">
+
+            {isCalculating ||
+              calculatedChapterIndex !==
+                currentChapterIndex ? (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-muted-foreground">
+                    Calculating...
+                  </p>
                 </div>
-              ))}
-            </div>
-          ) : (
-            // Pagination mode
-            <div>
-              {generatedPages[currentPageIndex]
-                ?.startsChapter && (
-                <h2 className="text-2xl font-bold font-display text-foreground mb-8 text-center opacity-70">
-                   {
-                    generatedPages[
-                      currentPageIndex
-                    ]?.chapterTitle
-                  }
-                </h2>
-              )}
-
-              {generatedPages[
-                currentPageIndex
-              ]?.content
-                ?.split('\n\n')
-                .map((para, j) => {
-                  return (
-                    <p
-                      key={j}
-                      className={`
-                        text-foreground/90
-                        font-reading
-                        transition-colors
-                        duration-500
-                        rounded-md
-                        text-justify
-                        ${
-                          highlightedText &&
-                          para
-                            .replace(/[—–]/g, '-')
-                            .replace(/\s+/g, ' ')
-                            .includes(highlightedText)
-                            ? 'bg-primary/15'
-                            : 'bg-transparent'
-                        }
-                      `}
+              ) : pages.length === 0 ? (
+              <div className="h-full flex items-center justify-center">
+                <p className="text-muted-foreground">
+                  No content
+                </p>
+              </div>
+            ) : (
+              <div
+                className="h-full overflow-hidden"
+                style={{
+                  fontFamily: settings.fontFamily,
+                  fontSize: `${settings.fontSize}px`,
+                  lineHeight: settings.lineHeight,
+                }}
+              >
+                {pages[currentPageIndex]?.lines.map(
+                  (line, index) => (
+                    <div
+                      key={`${line.startOffset}-${index}`}
+                      data-start-offset={line.startOffset}
+                      data-end-offset={line.endOffset}
                       style={{
-                        marginBottom: `${settings.paragraphSpacing}em`,
+                        height: `${line.height}px`,
+                        lineHeight: `${line.height}px`,
+                        marginBottom:
+                          `${line.spacingAfter}px`,
+                        overflow: 'hidden',
                       }}
                     >
-                      {para}
-                    </p>
-                  );
-                })}
-                
-              {/* Pagination controls */}
-              <div className="flex items-center justify-between mt-12 pt-8 border-t border-border">
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    setCurrentPageIndex(
-                    p =>
-                      Math.max(
-                        0,
-                        p - 1
-                      )
-                    )
-                   }
-                  disabled={currentPageIndex === 0}
-                  className="gap-2 text-muted-foreground"
-                >
-                  <ChevronLeft className="w-4 h-4" /> Previous
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  {currentPageIndex + 1} / {generatedPages.length}
-                </span>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    setCurrentPageIndex(
-                      p =>
-                        Math.min(
-                          generatedPages.length - 1,
-                          p + 1
-                        )
-                    )
-                   }
-                  disabled={currentPageIndex === generatedPages.length - 1}
-                  className="gap-2 text-muted-foreground"
-                >
-                  Next <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+                      {(() => {
+                        if (
+                          !activeBookmark ||
+                          activeBookmark.chapterIndex !==
+                            currentChapterIndex
+                        ) {
+                          return line.text;
+                        }
 
-      {/* Panels */}
+                        const selectionStart =
+                          Math.max(
+                            activeBookmark.startOffset,
+                            line.startOffset
+                          );
+
+                        const selectionEnd =
+                          Math.min(
+                            activeBookmark.endOffset,
+                            line.endOffset
+                          );
+
+                        if (
+                          selectionStart >= selectionEnd
+                        ) {
+                          return line.text;
+                        }
+
+                        const start =
+                          selectionStart -
+                          line.startOffset;
+
+                        const end =
+                          selectionEnd -
+                          line.startOffset;
+
+                        return (
+                          <>
+                            {line.text.slice(0, start)}
+
+                            <mark
+                              className={`text-inherit rounded-sm transition-colors duration-1000 ${
+                                bookmarkHighlightVisible
+                                  ? 'bg-violet-400/30'
+                                  : 'bg-transparent'
+                              }`}
+                            >
+                              {line.text.slice(start, end)}
+                            </mark>
+
+                            {line.text.slice(end)}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+          </div>
+
+        </div>
+
+      </main>
+
+
+      {/* =====================================================
+          SETTINGS
+      ===================================================== */}
+
       <ReaderSettingsDrawer
         open={showSettings}
-        onClose={() => setShowSettings(false)}
+        onClose={() =>
+          setShowSettings(false)
+        }
         settings={settings}
         onChange={setSettings}
       />
+
+
+      {/* =====================================================
+          BOOKMARKS
+      ===================================================== */}
+
       <BookmarksDrawer
         open={showBookmarks}
         bookmarks={bookmarks}
-        onDelete={
-          deleteBookmark
-        }
-        onSelect={
-          handleBookmarkSelect
-        }
+        chapters={book.chapters ?? []}
+        onDelete={deleteBookmark}
+        onSelect={handleBookmarkSelect}
         onClose={() =>
           setShowBookmarks(false)
         }
       />
+
+
+      {/* =====================================================
+          SEARCH
+      ===================================================== */}
+
       <SemanticSearchModal
         open={showSearch}
-        onClose={() => setShowSearch(false)}
+        onClose={() =>
+          setShowSearch(false)
+        }
         onJumpTo={(chapterId) => {
-          const el = document.getElementById(`chapter-${chapterId}`);
-          if (el) el.scrollIntoView({ behavior: 'smooth' });
+          console.log(
+            'Jump to chapter:',
+            chapterId
+          );
+
+          setShowSearch(false);
         }}
       />
-      <TTSControlPanel visible={showTTS} onClose={() => setShowTTS(false)} />
 
-      {
-        showBookmarkButton && (
-          <Button
-            size="icon"
-            className="
-              fixed
-              z-50
-              shadow-lg
-              animate-in
-              fade-in
-            "
-            style={{
-              left:
-                bookmarkButtonPosition.x,
-              top:
-                bookmarkButtonPosition.y,
-              transform:
-                'translateX(-50%)',
-            }}
-            onClick={addBookmark}
-          >
-            <BookmarkPlus className="h-4 w-4" />
-          </Button>
-        )
-      }
-      
+
+      {/* =====================================================
+          TTS
+      ===================================================== */}
+
+      <TTSControlPanel
+        visible={showTTS}
+        onClose={() =>
+          setShowTTS(false)
+        }
+      />
+
+      {settings.readingMode === 'paginate' && (
+        <div className="fixed bottom-0 inset-x-0 z-30">
+          <div className="bg-card/95 backdrop-blur-xl border-t border-border">
+
+            <div className="max-w-4xl mx-auto px-4 h-20 flex items-center justify-between">
+
+              <Button
+                variant="ghost"
+                onClick={goToPreviousPage}
+                disabled={
+                  currentChapterIndex === 0 &&
+                  currentPageIndex === 0
+                }
+                className="gap-2"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </Button>
+
+              <span className="text-sm text-muted-foreground">
+                {pages.length > 0
+                  ? `${currentPageIndex + 1} / ${pages.length}`
+                  : '0 / 0'}
+              </span>
+
+              <Button
+                variant="ghost"
+                onClick={goToNextPage}
+                disabled={
+                  currentChapterIndex >=
+                    book.chapters.length - 1 &&
+                  currentPageIndex >=
+                    pages.length - 1
+                }
+                className="gap-2"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
+
 
 export default ReaderPage;

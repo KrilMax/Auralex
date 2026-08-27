@@ -22,6 +22,10 @@ interface Props {
 
   bookmarks: BookBookmark[];
 
+  chapters: {
+    title: string;
+  }[];
+
   onDelete: (
     bookmarkId: string
 ) => void;
@@ -36,6 +40,7 @@ const BookmarksDrawer: React.FC<Props> = ({
   open,
   onClose,
   bookmarks,
+  chapters,
   onDelete,
   onSelect
 }) => {
@@ -62,9 +67,9 @@ const BookmarksDrawer: React.FC<Props> = ({
                 <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-2">
                     {[...bookmarks]
                         .sort(
-                            (a, b) =>
-                            a.pageIndex -
-                            b.pageIndex
+                          (a, b) =>
+                            a.chapterIndex -
+                            b.chapterIndex
                         )
                         .map(
                             (bookmark) => (
@@ -99,7 +104,8 @@ const BookmarksDrawer: React.FC<Props> = ({
                                     mt-1
                                     "
                                 >
-                                    Page {bookmark.pageIndex + 1}
+                                    {chapters[bookmark.chapterIndex]?.title ??
+                                      `Chapter ${bookmark.chapterIndex + 1}`}
                                 </p>
                                 </div>
 

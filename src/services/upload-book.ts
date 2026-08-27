@@ -66,9 +66,9 @@ export const uploadBook = async (
   await updateDoc(
     doc(db, 'books', bookDoc.id),
     {
+      title: parsedBook.title,
       chapters:
         parsedBook.chapters,
-
       processingStatus:
         'completed',
     }

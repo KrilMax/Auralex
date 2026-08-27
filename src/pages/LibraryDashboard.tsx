@@ -127,7 +127,7 @@ const BookCard: React.FC<{
 
       <div className="flex items-center justify-between">
         <span className="text-sm text-muted-foreground truncate">
-          {book.title}
+          {book.originalFilePath.split('/').pop()}
         </span>
 
         {book.processingStatus ===
