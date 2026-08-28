@@ -1,6 +1,6 @@
 from ebooklib import epub
 from bs4 import BeautifulSoup
-
+from .chapter_splitter import split_into_chapters
 
 def parse_epub(file_path: str):
     book = epub.read_epub(file_path)
@@ -76,6 +76,13 @@ def parse_epub(file_path: str):
         })
 
         chapter_id += 1
+
+        if len(chapters) == 1:
+            content = chapters[0]["content"]
+
+            chapters = split_into_chapters(
+                content
+            )
 
     return {
         "title": (

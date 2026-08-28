@@ -1,5 +1,5 @@
 from lxml import etree
-
+from .chapter_splitter import split_into_chapters
 
 def parse_fb2(file_path: str):
     tree = etree.parse(file_path)
@@ -68,6 +68,13 @@ def parse_fb2(file_path: str):
                 "order": index + 1,
             }
         )
+
+        if len(chapters) == 1:
+            content = chapters[0]["content"]
+
+            chapters = split_into_chapters(
+                content
+            )
 
     return {
         "title": title,

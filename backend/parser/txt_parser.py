@@ -1,4 +1,5 @@
 from pathlib import Path
+from .chapter_splitter import split_into_chapters
 
 
 def parse_txt(file_path: str):
@@ -12,12 +13,7 @@ def parse_txt(file_path: str):
     return {
         "title": path.stem,
         "format": "txt",
-        "chapters": [
-            {
-                "id": "chapter-1",
-                "title": "",
-                "content": text,
-                "order": 1
-            }
-        ]
+        "chapters": split_into_chapters(
+            text
+        ),
     }
