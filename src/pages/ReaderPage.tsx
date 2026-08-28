@@ -2,6 +2,7 @@ import React, {
   useEffect,
   useState,
   useRef,
+  useLayoutEffect,
 } from 'react';
 
 import {
@@ -43,7 +44,11 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-import { useBookLayout } from '@/hooks/useBookLayout';
+import {
+  useBookLayout,
+  LayoutPage,
+  calculateChapterPages,
+} from '@/hooks/useBookLayout';
 
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
@@ -73,12 +78,14 @@ const ReaderPage: React.FC = () => {
   useEffect(() => {
     if (loading) return;
 
-    const element = pageAreaRef.current;
+    const element =
+      measurementRef.current;
 
     if (!element) return;
 
     const updateSize = () => {
-      const rect = element.getBoundingClientRect();
+      const rect =
+        element.getBoundingClientRect();
 
       setLayoutSize({
         width: rect.width,
@@ -88,7 +95,8 @@ const ReaderPage: React.FC = () => {
 
     updateSize();
 
-    const observer = new ResizeObserver(updateSize);
+    const observer =
+      new ResizeObserver(updateSize);
 
     observer.observe(element);
 
@@ -150,8 +158,29 @@ const ReaderPage: React.FC = () => {
   const [currentChapterIndex, setCurrentChapterIndex] =
     useState(book?.lastChapter ?? 0);
 
+  const [visibleChapterIndex, setVisibleChapterIndex] =
+    useState(book?.lastChapter ?? 0);
+
   const [currentPageIndex, setCurrentPageIndex] =
     useState(book?.lastPageIndex ?? 0);
+
+  const [scrollPages, setScrollPages] =
+    useState<LayoutPage[]>([]);
+
+  const [loadedScrollChapterIndex, setLoadedScrollChapterIndex] =
+    useState<number>(-1);
+
+  const [firstLoadedScrollChapterIndex, setFirstLoadedScrollChapterIndex] =
+    useState<number>(-1);
+
+  const isLoadingPreviousChapterRef =
+    useRef(false);
+
+  const previousScrollPositionRef =
+    useRef<{
+      scrollY: number;
+      scrollHeight: number;
+    } | null>(null);
 
   const readingOffsetRef =
     useRef<number | null>(
@@ -175,6 +204,12 @@ const ReaderPage: React.FC = () => {
   const pageAreaRef =
     useRef<HTMLDivElement>(null);
 
+  const scrollEndRef =
+    useRef<HTMLDivElement>(null);
+
+  const measurementRef =
+    useRef<HTMLDivElement>(null);
+
   const [layoutSize, setLayoutSize] =
     useState({
       width: 0,
@@ -185,6 +220,10 @@ const ReaderPage: React.FC = () => {
     if (!book) return;
 
     setCurrentChapterIndex(
+      book.lastChapter ?? 0
+    );
+
+    setVisibleChapterIndex(
       book.lastChapter ?? 0
     );
 
@@ -207,6 +246,434 @@ const ReaderPage: React.FC = () => {
     layoutSize.width,
     Math.max(0, layoutSize.height - 20)
   );
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      isCalculating ||
+      calculatedChapterIndex !== currentChapterIndex ||
+      pages.length === 0 ||
+      !book?.chapters
+    ) {
+      return;
+    }
+
+    setScrollPages(prev => {
+      const existingChapterIndexes =
+        new Set(
+          prev.map(page => page.chapterIndex)
+        );
+
+      if (
+        existingChapterIndexes.has(
+          currentChapterIndex
+        )
+      ) {
+        return prev;
+      }
+
+      return [...prev, ...pages];
+    });
+
+    setLoadedScrollChapterIndex(
+      currentChapterIndex
+    );
+    setFirstLoadedScrollChapterIndex(
+      currentChapterIndex
+    );
+  }, [
+    settings.readingMode,
+    isCalculating,
+    calculatedChapterIndex,
+    currentChapterIndex,
+    pages,
+    book?.chapters,
+  ]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      isCalculating ||
+      calculatedChapterIndex !==
+        currentChapterIndex ||
+      pages.length === 0 ||
+      readingOffsetRef.current === null
+    ) {
+      return;
+    }
+
+    const targetOffset =
+      readingOffsetRef.current;
+
+    const targetPage =
+      pages.find(
+        page =>
+          targetOffset >=
+            page.startOffset &&
+          targetOffset <=
+            page.endOffset
+      );
+
+    if (!targetPage) {
+      return;
+    }
+
+    const scrollToPosition = () => {
+      const element =
+        document.querySelector(
+          `[data-chapter-index="${currentChapterIndex}"][data-start-offset="${targetPage.startOffset}"]`
+        ) as HTMLElement | null;
+
+      if (!element) {
+        return;
+      }
+
+      const progressWithinPage =
+        targetPage.endOffset >
+        targetPage.startOffset
+          ? (targetOffset -
+              targetPage.startOffset) /
+            (targetPage.endOffset -
+              targetPage.startOffset)
+          : 0;
+
+      const targetScroll =
+        window.scrollY +
+        element.getBoundingClientRect().top -
+        window.innerHeight * 0.35 +
+        element.getBoundingClientRect()
+          .height *
+          progressWithinPage;
+
+      window.scrollTo({
+        top: Math.max(
+          0,
+          targetScroll
+        ),
+        behavior: 'instant',
+      });
+
+      readingOffsetRef.current = null;
+    };
+
+    requestAnimationFrame(
+      scrollToPosition
+    );
+  }, [
+    settings.readingMode,
+    isCalculating,
+    calculatedChapterIndex,
+    currentChapterIndex,
+    pages,
+  ]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !pendingBookmark ||
+      isCalculating
+    ) {
+      return;
+    }
+
+    if (
+      pendingBookmark.chapterIndex !==
+      currentChapterIndex
+    ) {
+      return;
+    }
+
+    const targetPage =
+      scrollPages.find(
+        page =>
+          pendingBookmark.startOffset >=
+            page.startOffset &&
+          pendingBookmark.startOffset <
+            page.endOffset
+      );
+
+    if (!targetPage) {
+      return;
+    }
+
+    const scrollToBookmark = () => {
+      const element =
+        document.querySelector(
+          `[data-chapter-index="${targetPage.chapterIndex}"][data-start-offset="${targetPage.startOffset}"]`
+        ) as HTMLElement | null;
+
+      if (!element) {
+        return;
+      }
+
+      const progressWithinPage =
+        targetPage.endOffset >
+        targetPage.startOffset
+          ? (pendingBookmark.startOffset -
+              targetPage.startOffset) /
+            (targetPage.endOffset -
+              targetPage.startOffset)
+          : 0;
+
+      const rect =
+        element.getBoundingClientRect();
+
+      const targetScroll =
+        window.scrollY +
+        rect.top -
+        window.innerHeight * 0.35 +
+        rect.height *
+          progressWithinPage;
+
+      window.scrollTo({
+        top: Math.max(
+          0,
+          targetScroll
+        ),
+        behavior: 'instant',
+      });
+
+      readingOffsetRef.current = null;
+      setPendingBookmark(null);
+    };
+
+    requestAnimationFrame(
+      scrollToBookmark
+    );
+  }, [
+    settings.readingMode,
+    pendingBookmark,
+    isCalculating,
+    currentChapterIndex,
+    scrollPages,
+  ]);
+
+  const loadNextScrollChapter = () => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !book?.chapters ||
+      isCalculating
+    ) {
+      return;
+    }
+
+    const nextChapterIndex =
+      loadedScrollChapterIndex >= 0
+        ? loadedScrollChapterIndex + 1
+        : currentChapterIndex + 1;
+
+    if (
+      nextChapterIndex <=
+      loadedScrollChapterIndex
+    ) {
+      return;
+    }
+
+    if (
+      nextChapterIndex >=
+      book.chapters.length
+    ) {
+      return;
+    }
+
+    const nextChapter =
+      book.chapters[nextChapterIndex];
+
+    const nextPages =
+      calculateChapterPages(
+        nextChapter,
+        nextChapterIndex,
+        settings,
+        layoutSize.width,
+        Math.max(
+          0,
+          layoutSize.height - 20
+        )
+      );
+
+    setScrollPages(prev => [
+      ...prev,
+      ...nextPages,
+    ]);
+
+    setLoadedScrollChapterIndex(
+      nextChapterIndex
+    );
+
+  };
+
+  const loadPreviousScrollChapter = () => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !book?.chapters ||
+      isCalculating
+    ) {
+      return;
+    }
+
+    if (
+      firstLoadedScrollChapterIndex <= 0
+    ) {
+      return;
+    }
+
+    const previousChapterIndex =
+      firstLoadedScrollChapterIndex - 1;
+
+    const previousChapter =
+      book.chapters[
+        previousChapterIndex
+      ];
+
+    if (!previousChapter) {
+      return;
+    }
+
+    const previousPages =
+      calculateChapterPages(
+        previousChapter,
+        previousChapterIndex,
+        settings,
+        layoutSize.width,
+        Math.max(
+          0,
+          layoutSize.height - 20
+        )
+      );
+
+    if (!previousPages.length) {
+      return;
+    }
+
+    isLoadingPreviousChapterRef.current =
+      true;
+
+    previousScrollPositionRef.current = {
+      scrollY: window.scrollY,
+      scrollHeight:
+        document.documentElement
+          .scrollHeight,
+    };
+
+    setScrollPages(prev => [
+      ...previousPages,
+      ...prev,
+    ]);
+
+    setFirstLoadedScrollChapterIndex(
+      previousChapterIndex
+    );
+  };
+
+  useLayoutEffect(() => {
+    if (
+      !isLoadingPreviousChapterRef.current ||
+      !previousScrollPositionRef.current
+    ) {
+      return;
+    }
+
+    const previousPosition =
+      previousScrollPositionRef.current;
+
+    const newScrollHeight =
+      document.documentElement.scrollHeight;
+
+    const addedHeight =
+      newScrollHeight -
+      previousPosition.scrollHeight;
+
+    window.scrollTo({
+      top:
+        previousPosition.scrollY +
+        addedHeight,
+      behavior: 'instant',
+    });
+
+    previousScrollPositionRef.current =
+      null;
+
+    isLoadingPreviousChapterRef.current =
+      false;
+  }, [scrollPages]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll'
+    ) {
+      return;
+    }
+
+    const handleScrollTop = () => {
+      if (
+        window.scrollY <= 800
+      ) {
+        loadPreviousScrollChapter();
+      }
+    };
+
+    window.addEventListener(
+      'scroll',
+      handleScrollTop,
+      { passive: true }
+    );
+
+    return () => {
+      window.removeEventListener(
+        'scroll',
+        handleScrollTop
+      );
+    };
+  }, [
+    settings.readingMode,
+    firstLoadedScrollChapterIndex,
+    isCalculating,
+    book?.chapters,
+    layoutSize.width,
+    layoutSize.height,
+  ]);
+  
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !scrollEndRef.current
+    ) {
+      return;
+    }
+
+    const observer =
+      new IntersectionObserver(
+        entries => {
+          const entry = entries[0];
+
+          if (
+            entry.isIntersecting
+          ) {
+            loadNextScrollChapter();
+          }
+        },
+        {
+          root: null,
+          rootMargin: '800px',
+          threshold: 0,
+        }
+      );
+
+    observer.observe(
+      scrollEndRef.current
+    );
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    settings.readingMode,
+    scrollPages,
+    currentChapterIndex,
+    isCalculating,
+    layoutSize.width,
+    layoutSize.height,
+  ]);
 
   const calculateReadingProgress = () => {
     if (!book || !book.chapters?.length) {
@@ -257,6 +724,105 @@ const ReaderPage: React.FC = () => {
     const readCharacters =
       previousCharacters +
       currentOffset;
+
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        Math.round(
+          (readCharacters /
+            totalCharacters) *
+            100
+        )
+      )
+    );
+  };
+
+  const getCurrentScrollPage = (): LayoutPage | null => {
+    if (!scrollPages.length) {
+      return null;
+    }
+
+    const viewportPoint =
+      Math.min(
+        window.innerHeight * 0.35,
+        window.innerHeight - 20
+      );
+
+    for (const page of scrollPages) {
+      const element =
+        document.querySelector(
+          `[data-chapter-index="${page.chapterIndex}"][data-start-offset="${page.startOffset}"]`
+        ) as HTMLElement | null;
+
+      if (!element) continue;
+
+      const rect =
+        element.getBoundingClientRect();
+
+      if (
+        rect.top <= viewportPoint &&
+        rect.bottom >= viewportPoint
+      ) {
+        return page;
+      }
+
+      if (rect.top > viewportPoint) {
+        const previousIndex =
+          scrollPages.indexOf(page) - 1;
+
+        if (previousIndex >= 0) {
+          return scrollPages[previousIndex];
+        }
+
+        return page;
+      }
+    }
+
+    return scrollPages[
+      scrollPages.length - 1
+    ];
+  };
+
+  const calculateScrollProgress = () => {
+    if (!book?.chapters?.length) {
+      return 0;
+    }
+
+    const totalCharacters =
+      book.chapters.reduce(
+        (total, chapter) =>
+          total + chapter.content.length,
+        0
+      );
+
+    if (totalCharacters === 0) {
+      return 0;
+    }
+
+    const currentPage =
+      getCurrentScrollPage();
+
+    if (!currentPage) {
+      return 0;
+    }
+
+    const previousCharacters =
+      book.chapters
+        .slice(
+          0,
+          currentPage.chapterIndex
+        )
+        .reduce(
+          (total, chapter) =>
+            total +
+            chapter.content.length,
+          0
+        );
+
+    const readCharacters =
+      previousCharacters +
+      currentPage.endOffset;
 
     return Math.min(
       100,
@@ -330,6 +896,8 @@ const ReaderPage: React.FC = () => {
     }
 
     if (currentChapterIndex > 0) {
+      readingOffsetRef.current = null;
+      setPendingBookmark(null);
       setPendingLastPage(true);
 
       setCurrentChapterIndex(
@@ -341,6 +909,10 @@ const ReaderPage: React.FC = () => {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
+    if (settings.readingMode === 'scroll') {
+      return;
+    }
+
     e.preventDefault();
 
     if (isCalculating) {
@@ -520,6 +1092,106 @@ const ReaderPage: React.FC = () => {
     useState(
       book?.readingProgress ?? 0
     );
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !book
+    ) {
+      return;
+    }
+
+    const handleScrollProgress = () => {
+      const currentPage =
+        getCurrentScrollPage();
+
+        if (!currentPage) {
+          return;
+        }
+
+        if (
+          settings.readingMode === 'scroll' &&
+          currentPage.chapterIndex !==
+            visibleChapterIndex
+        ) {
+          setVisibleChapterIndex(
+            currentPage.chapterIndex
+          );
+        }
+
+        const element =
+          document.querySelector(
+            `[data-chapter-index="${currentPage.chapterIndex}"][data-start-offset="${currentPage.startOffset}"]`
+          ) as HTMLElement | null;
+
+        if (!element) {
+          return;
+        }
+
+        const rect =
+          element.getBoundingClientRect();
+
+        const viewportPoint =
+          Math.min(
+            window.innerHeight * 0.35,
+            window.innerHeight - 20
+          );
+
+        const relativePosition =
+          Math.max(
+            0,
+            Math.min(
+              1,
+              (viewportPoint - rect.top) /
+                Math.max(1, rect.height)
+            )
+          );
+
+        const currentOffset =
+          Math.round(
+            currentPage.startOffset +
+              (currentPage.endOffset -
+                currentPage.startOffset) *
+                relativePosition
+          );
+
+        const progress =
+          calculateScrollProgress();
+
+        setReadingProgress(progress);
+
+        updateBook(book.id, {
+          lastChapter:
+            currentPage.chapterIndex,
+
+          lastOffset:
+            currentOffset,
+
+          readingProgress:
+            progress,
+        }).catch(console.error);
+    };
+
+    window.addEventListener(
+      'scroll',
+      handleScrollProgress,
+      { passive: true }
+    );
+
+    handleScrollProgress();
+
+    return () => {
+      window.removeEventListener(
+        'scroll',
+        handleScrollProgress
+      );
+    };
+  }, [
+    settings.readingMode,
+    book,
+    scrollPages,
+    readingProgress,
+  ]);
 
   const [showSearch, setShowSearch] =
     useState(false);
@@ -766,6 +1438,17 @@ const ReaderPage: React.FC = () => {
     setActiveBookmark(null);
     setBookmarkHighlightVisible(false);
 
+    if (
+      settings.readingMode === 'scroll'
+    ) {
+      setScrollPages([]);
+      setLoadedScrollChapterIndex(-1);
+    }
+
+    setVisibleChapterIndex(
+      chapterIndex
+    );
+    
     setCurrentChapterIndex(
       chapterIndex
     );
@@ -791,6 +1474,9 @@ const ReaderPage: React.FC = () => {
       startOffset: number;
       endOffset: number;
     } | null>(null);
+
+  const [selectedChapterIndex, setSelectedChapterIndex] =
+    useState(currentChapterIndex);
 
   const [bookmarkButtonPosition, setBookmarkButtonPosition] =
     useState<{
@@ -820,26 +1506,38 @@ const handleTextSelection = () => {
     return;
   }
 
-  const range = selection.getRangeAt(0);
-  const container = pageAreaRef.current;
-  const page = pages[currentPageIndex];
+  const range =
+    selection.getRangeAt(0);
 
-  if (!container || !page) {
-    return;
-  }
+  const container =
+    pageAreaRef.current;
 
   if (
-    !container.contains(range.startContainer) ||
-    !container.contains(range.endContainer)
+    settings.readingMode ===
+    'paginate'
   ) {
-    return;
+    if (!container) {
+      return;
+    }
+
+    if (
+      !container.contains(
+        range.startContainer
+      ) ||
+      !container.contains(
+        range.endContainer
+      )
+    ) {
+      return;
+    }
   }
 
   const getLineElement = (
     node: Node
   ): HTMLElement | null => {
     const element =
-      node.nodeType === Node.ELEMENT_NODE
+      node.nodeType ===
+      Node.ELEMENT_NODE
         ? (node as Element)
         : node.parentElement;
 
@@ -849,22 +1547,28 @@ const handleTextSelection = () => {
   };
 
   const startLine =
-    getLineElement(range.startContainer);
+    getLineElement(
+      range.startContainer
+    );
 
   const endLine =
-    getLineElement(range.endContainer);
+    getLineElement(
+      range.endContainer
+    );
 
   if (!startLine || !endLine) {
     return;
   }
 
-  const startLineOffset = Number(
-    startLine.dataset.startOffset
-  );
+  const startLineOffset =
+    Number(
+      startLine.dataset.startOffset
+    );
 
-  const endLineOffset = Number(
-    endLine.dataset.startOffset
-  );
+  const endLineOffset =
+    Number(
+      endLine.dataset.startOffset
+    );
 
   const startOffset =
     startLineOffset +
@@ -874,8 +1578,33 @@ const handleTextSelection = () => {
     endLineOffset +
     range.endOffset;
 
-  if (endOffset <= startOffset) {
+  if (
+    endOffset <= startOffset
+  ) {
     return;
+  }
+
+  let chapterIndex =
+    currentChapterIndex;
+
+  if (
+    settings.readingMode ===
+    'scroll'
+  ) {
+    const pageElement =
+      startLine.closest(
+        '[data-chapter-index]'
+      ) as HTMLElement | null;
+
+    if (!pageElement) {
+      return;
+    }
+
+    chapterIndex =
+      Number(
+        pageElement.dataset
+          .chapterIndex
+      );
   }
 
   const rect =
@@ -888,16 +1617,19 @@ const handleTextSelection = () => {
     endOffset,
   });
 
+  setSelectedChapterIndex(
+    chapterIndex
+  );
+
   setBookmarkButtonPosition({
     x:
       rect.left +
       rect.width / 2,
 
-    y:
-      Math.max(
-        10,
-        rect.top - 40
-      ),
+    y: Math.max(
+      10,
+      rect.top - 40
+    ),
   });
 };
 
@@ -914,7 +1646,7 @@ const addBookmark = async () => {
     const bookmark: BookBookmark = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       selectedText,
-      chapterIndex: currentChapterIndex,
+      chapterIndex: selectedChapterIndex,
       startOffset: selectedRange.startOffset,
       endOffset: selectedRange.endOffset,
       createdAt: Date.now(),
@@ -975,43 +1707,84 @@ const addBookmark = async () => {
   };
 
   const handleBookmarkSelect = (
-  bookmark: BookBookmark
-) => {
-  if (!book) return;
+    bookmark: BookBookmark
+  ) => {
+    if (!book) return;
 
-  setShowBookmarks(false);
+    setShowBookmarks(false);
 
-  setActiveBookmark(bookmark);
-  setBookmarkHighlightVisible(true);
+    setActiveBookmark(bookmark);
+    setBookmarkHighlightVisible(true);
 
-  if (
-    bookmark.chapterIndex ===
-    currentChapterIndex
-  ) {
-    const pageIndex =
-      pages.findIndex(
-        page =>
-          bookmark.startOffset >=
-            page.startOffset &&
-          bookmark.startOffset <
-            page.endOffset
+    // PAGINATION
+    if (
+      settings.readingMode === 'paginate'
+    ) {
+      if (
+        bookmark.chapterIndex ===
+        currentChapterIndex
+      ) {
+        const pageIndex =
+          pages.findIndex(
+            page =>
+              bookmark.startOffset >=
+                page.startOffset &&
+              bookmark.startOffset <
+                page.endOffset
+          );
+
+        if (pageIndex >= 0) {
+          setCurrentPageIndex(
+            pageIndex
+          );
+        }
+
+        return;
+      }
+
+      setCurrentChapterIndex(
+        bookmark.chapterIndex
       );
 
-    if (pageIndex >= 0) {
-      setCurrentPageIndex(pageIndex);
+      setCurrentPageIndex(0);
+      setPendingBookmark(bookmark);
+
+      return;
     }
 
-    return;
-  }
+    // INFINITE SCROLL
 
-  setCurrentChapterIndex(
-    bookmark.chapterIndex
-  );
+    const chapterAlreadyLoaded =
+      scrollPages.some(
+        page =>
+          page.chapterIndex ===
+          bookmark.chapterIndex
+      );
 
-  setCurrentPageIndex(0);
+    if (
+      chapterAlreadyLoaded
+    ) {
+      setPendingBookmark({
+        ...bookmark,
+      });
 
-  setPendingBookmark(bookmark);
-};
+      return;
+    }
+    setVisibleChapterIndex(
+      bookmark.chapterIndex
+    );
+
+    setCurrentChapterIndex(
+      bookmark.chapterIndex
+    );
+
+    setScrollPages([]);
+    setLoadedScrollChapterIndex(-1);
+
+    setPendingBookmark({
+      ...bookmark,
+    });
+  };
 
 useEffect(() => {
   if (!bookmarkHighlightVisible) {
@@ -1180,7 +1953,11 @@ useEffect(() => {
                   }
                   className="block w-full text-xs text-muted-foreground hover:text-foreground transition-colors truncate text-left"
                 >
-                  {book?.chapters?.[currentChapterIndex]?.title ?? 'Reader'}
+                  {book?.chapters?.[
+                    settings.readingMode === 'scroll'
+                      ? visibleChapterIndex
+                      : currentChapterIndex
+                  ]?.title ?? 'Reader'}
                 </button>
               </div>
             </div>
@@ -1376,10 +2153,37 @@ useEffect(() => {
       ===================================================== */}
 
       <main
-        className="h-screen pt-20 pb-24 px-4"
+        className={`pt-20 pb-24 px-4 ${
+          settings.readingMode === 'paginate'
+            ? 'h-screen'
+            : 'min-h-screen'
+        }`}
         onWheel={handleWheel}
         onMouseUp={handleTextSelection}
       >
+
+        <div
+          className="fixed pointer-events-none invisible"
+          style={{
+            top: '80px',
+            left: '0',
+            right: '0',
+            height:
+              settings.readingMode === 'paginate'
+                ? 'calc(100vh - 150px)'
+                : '100vh',
+          }}
+        >
+          <div
+            ref={measurementRef}
+            className="w-full mx-auto"
+            style={{
+              maxWidth: `${settings.contentWidth}px`,
+              height: '100%',
+            }}
+          />
+        </div>
+
         {bookmarkButtonPosition && (
           <button
             type="button"
@@ -1407,6 +2211,54 @@ useEffect(() => {
           </button>
         )}
 
+        {settings.readingMode === 'scroll' ? (
+          <div
+            className="mx-auto"
+            style={{
+              maxWidth: `${settings.contentWidth}px`,
+              fontFamily: settings.fontFamily,
+              fontSize: `${settings.fontSize}px`,
+              lineHeight: settings.lineHeight,
+            }}
+          >
+            {isCalculating ? (
+              <div className="flex min-h-[50vh] items-center justify-center">
+                <p className="text-muted-foreground">
+                  Calculating...
+                </p>
+              </div>
+            ) : (
+              scrollPages.map((page, index) => (
+                <div
+                  key={`${page.chapterIndex}-${page.startOffset}-${index}`}
+                  className="mb-8"
+                  data-chapter-index={page.chapterIndex}
+                  data-start-offset={page.startOffset}
+                  data-end-offset={page.endOffset}
+                >
+                  {page.startsChapter && (
+                    <div className="mb-6 pt-8">
+                      <h2 className="text-2xl font-bold">
+                        {page.chapterTitle}
+                      </h2>
+                    </div>
+                  )}
+
+                  <div className="whitespace-pre-wrap">
+                    {page.content}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div
+              ref={scrollEndRef}
+              className="h-px w-full"
+            />
+
+          </div>
+        ) : (
+          //PAGINATE MODE
         <div
           ref={pageAreaRef}
           className="mx-auto"
@@ -1525,6 +2377,7 @@ useEffect(() => {
           </div>
 
         </div>
+        )}
 
       </main>
 

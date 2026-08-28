@@ -36,7 +36,7 @@ export interface BookLayoutResult {
   calculatedChapterIndex: number;
 }
 
-type Chapter =
+export type Chapter =
   NonNullable<Book['chapters']>[number];
 
 const createContainer = (
@@ -351,6 +351,22 @@ const buildPages = (
   return pages;
 };
 
+export const calculateChapterPages = (
+  chapter: Chapter,
+  chapterIndex: number,
+  settings: ReaderSettings,
+  width: number,
+  height: number
+): LayoutPage[] => {
+  return buildPages(
+    chapter,
+    chapterIndex,
+    settings,
+    width,
+    height
+  );
+};
+
 export const useBookLayout = (
   book: Book | null,
   chapterIndex: number,
@@ -372,15 +388,15 @@ export const useBookLayout = (
 
   useEffect(() => {
     if (
-      !chapter ||
-      width <= 0 ||
-      height <= 0
-    ) {
-      setPages([]);
-      setIsCalculating(false);
-      setCalculatedChapterIndex(null);
-      return;
-    }
+    !chapter ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    setPages([]);
+    setIsCalculating(false);
+    setCalculatedChapterIndex(null);
+    return;
+  }
 
     let cancelled = false;
 
@@ -405,6 +421,7 @@ export const useBookLayout = (
 
           if (!cancelled) {
             setPages(result);
+
             setCalculatedChapterIndex(
               chapterIndex
             );
