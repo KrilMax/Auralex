@@ -20,10 +20,14 @@ export interface Book {
   uploadedAt?: unknown;
 
   readingProgress: number;
+  
+  lastReadAt?: number;
 
   lastChapter?: number;
   
   lastPageIndex?: number;
+
+  lastOffset?: number;
 
   bookmarks?: Bookmark[];
 

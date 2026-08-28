@@ -220,17 +220,23 @@ const LibraryDashboard: React.FC =
       );
 
     const continueReading =
-      useMemo(
-        () =>
-          books.filter(
+    useMemo(
+      () =>
+        books
+          .filter(
             (b) =>
               b.readingProgress >
                 0 &&
               b.readingProgress <
                 100
+          )
+          .sort(
+            (a, b) =>
+              (b.lastReadAt ?? 0) -
+              (a.lastReadAt ?? 0)
           ),
-        [books]
-      );
+      [books]
+    );
 
     const recentlyAdded =
       useMemo(

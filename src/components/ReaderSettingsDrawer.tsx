@@ -30,27 +30,67 @@ const SliderRow: React.FC<{
   max: number;
   step: number;
   onChange: (v: number) => void;
-  displayValue?: string;
-}> = ({ label, icon, value, min, max, step, onChange, displayValue }) => (
-  <div className="space-y-2">
-    <div className="flex items-center justify-between text-sm">
-      <span className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        {label}
-      </span>
-      <span className="text-foreground font-medium">{displayValue || value}</span>
+  displayValue?: (value: number) => string;
+}> = ({
+  label,
+  icon,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  displayValue,
+}) => {
+  const [localValue, setLocalValue] =
+    useState(value);
+
+  React.useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const formattedValue =
+    displayValue
+      ? displayValue(localValue)
+      : localValue;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-sm">
+        <span className="flex items-center gap-2 text-muted-foreground">
+          {icon}
+          {label}
+        </span>
+
+        <span className="text-foreground font-medium">
+          {formattedValue}
+        </span>
+      </div>
+
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={localValue}
+        onChange={e =>
+          setLocalValue(
+            Number(e.target.value)
+          )
+        }
+        onMouseUp={() =>
+          onChange(localValue)
+        }
+        onTouchEnd={() =>
+          onChange(localValue)
+        }
+        onKeyUp={() =>
+          onChange(localValue)
+        }
+        className="w-full h-1.5 bg-secondary rounded-full appearance-none cursor-pointer accent-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-glow"
+      />
     </div>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      step={step}
-      value={value}
-      onChange={e => onChange(Number(e.target.value))}
-      className="w-full h-1.5 bg-secondary rounded-full appearance-none cursor-pointer accent-primary [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-glow"
-    />
-  </div>
-);
+  );
+};
 
 const ReaderSettingsDrawer: React.FC<Props> = ({ open, onClose, settings, onChange }) => {
   const update = (partial: Partial<ReaderSettings>) => onChange({ ...settings, ...partial });
@@ -120,7 +160,7 @@ const ReaderSettingsDrawer: React.FC<Props> = ({ open, onClose, settings, onChan
               max={28}
               step={1}
               onChange={v => update({ fontSize: v })}
-              displayValue={`${settings.fontSize}px`}
+              displayValue={v => `${v}px`}
             />
             <SliderRow
               label="Line Height"
@@ -130,7 +170,7 @@ const ReaderSettingsDrawer: React.FC<Props> = ({ open, onClose, settings, onChan
               max={2.4}
               step={0.1}
               onChange={v => update({ lineHeight: v })}
-              displayValue={`${settings.lineHeight.toFixed(1)}`}
+              displayValue={v => v.toFixed(1)}
             />
             <SliderRow
               label="Content Width"
@@ -140,7 +180,7 @@ const ReaderSettingsDrawer: React.FC<Props> = ({ open, onClose, settings, onChan
               max={900}
               step={50}
               onChange={v => update({ contentWidth: v })}
-              displayValue={`${settings.contentWidth}px`}
+              displayValue={v => `${v}px`}
             />
             <SliderRow
               label="Paragraph Spacing"
@@ -150,7 +190,9 @@ const ReaderSettingsDrawer: React.FC<Props> = ({ open, onClose, settings, onChan
               max={3}
               step={0.25}
               onChange={v => update({ paragraphSpacing: v })}
-              displayValue={`${settings.paragraphSpacing.toFixed(2)}em`}
+              displayValue={v =>
+                `${v.toFixed(2)}em`
+              }
             />
           </div>
 
