@@ -50,6 +50,8 @@ import {
   calculateChapterPages,
 } from '@/hooks/useBookLayout';
 
+import { useTTS } from '@/hooks/useTTS';
+
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
   fontFamily: "'Crimson Pro', Georgia, serif",
@@ -141,6 +143,71 @@ const ReaderPage: React.FC = () => {
     loadBook();
   }, [id]);
 
+  const ttsSentences = React.useMemo(() => {
+    if (!book?.chapters?.length) {
+      return [];
+    }
+
+    return book.chapters.flatMap(
+      (chapter, chapterIndex) => {
+        const sentences: {
+          id: string;
+          text: string;
+          chapterIndex: number;
+          startOffset: number;
+          endOffset: number;
+        }[] = [];
+
+        const sentenceRegex =
+          /[^.!?…]+[.!?…]+|[^.!?…]+$/g;
+
+        let match: RegExpExecArray | null;
+        let index = 0;
+
+        while (
+          (match = sentenceRegex.exec(
+            chapter.content
+          )) !== null
+        ) {
+          const rawText = match[0];
+          const text = rawText.trim();
+
+          if (!text) {
+            continue;
+          }
+
+          const leadingWhitespace =
+            rawText.length -
+            rawText.trimStart().length;
+
+          const trailingWhitespace =
+            rawText.length -
+            rawText.trimEnd().length;
+
+          const startOffset =
+            match.index + leadingWhitespace;
+
+          const endOffset =
+            match.index +
+            rawText.length -
+            trailingWhitespace;
+
+          sentences.push({
+            id: `${chapterIndex}-${index}`,
+            text,
+            chapterIndex,
+            startOffset,
+            endOffset,
+          });
+
+          index++;
+        }
+
+        return sentences;
+      }
+    );
+  }, [book]);
+
   // =========================================================
   // SETTINGS
   // =========================================================
@@ -164,6 +231,90 @@ const ReaderPage: React.FC = () => {
   const [currentPageIndex, setCurrentPageIndex] =
     useState(book?.lastPageIndex ?? 0);
 
+  const getTTSSentenceIndex = (
+    chapterIndex: number,
+    offset: number
+  ) => {
+    const index = activeTTSSegments.findIndex(
+      sentence =>
+        sentence.chapterIndex === chapterIndex &&
+        offset >= sentence.startOffset &&
+        offset < sentence.endOffset
+    );
+
+    if (index >= 0) {
+      return index;
+    }
+
+    const nextIndex = activeTTSSegments.findIndex(
+      sentence =>
+        sentence.chapterIndex === chapterIndex &&
+        sentence.startOffset >= offset
+    );
+
+    if (nextIndex >= 0) {
+      return nextIndex;
+    }
+
+    return activeTTSSegments.findIndex(
+      sentence =>
+        sentence.chapterIndex > chapterIndex
+    );
+  };
+
+  const syncTTSWithReader = (
+    chapterIndex: number,
+    offset: number
+  ) => {
+    const ttsIndex =
+      getTTSSentenceIndex(
+        chapterIndex,
+        offset
+      );
+
+    if (ttsIndex < 0) {
+      return;
+    }
+
+    tts.setParagraphIndex(ttsIndex);
+    };
+
+  const getCurrentTTSSegment = () => {
+    if (!tts.isPlaying) {
+      return null;
+    }
+
+    return activeTTSSegments[
+      tts.currentParagraphIndex
+    ] ?? null;
+  };
+
+  useEffect(() => {
+    if (!book) {
+      return;
+    }
+
+    const chapterIndex =
+      settings.readingMode === 'scroll'
+        ? visibleChapterIndex
+        : book.lastChapter ?? 0;
+
+    const offset =
+      settings.readingMode === 'scroll'
+        ? 0
+        : book.lastOffset ?? 0;
+
+    syncTTSWithReader(
+      chapterIndex,
+      offset
+    );
+  }, [
+    book,
+    ttsSentences,
+    settings.readingMode,
+    visibleChapterIndex,
+  ]);
+
   const [scrollPages, setScrollPages] =
     useState<LayoutPage[]>([]);
 
@@ -186,11 +337,13 @@ const ReaderPage: React.FC = () => {
     useRef<number | null>(
       book?.lastOffset ?? null
     );
-  const [pendingLastPage, setPendingLastPage] =
-    useState(false);
+  const [pendingLastPage, setPendingLastPage] = useState(false);
 
-  const hasUserInteractedRef =
-    useRef(false);
+  const hasUserInteractedRef = useRef(false);
+
+  const continueTTSAfterPageChangeRef = useRef(false);
+
+  const continueTTSAfterPreviousPageRef = useRef(false);
 
   const [pendingBookmark, setPendingBookmark] =
     useState<BookBookmark | null>(null);
@@ -246,6 +399,318 @@ const ReaderPage: React.FC = () => {
     layoutSize.width,
     Math.max(0, layoutSize.height - 20)
   );
+
+  const paginationTTSSentences = React.useMemo(() => {
+    const page = pages[currentPageIndex];
+
+    if (!page?.content) {
+      return [];
+    }
+
+    const sentences: {
+      id: string;
+      text: string;
+      chapterIndex: number;
+      startOffset: number;
+      endOffset: number;
+    }[] = [];
+
+    const sentenceRegex =
+      /[^.!?…]+[.!?…]+|[^.!?…]+$/g;
+
+    let match: RegExpExecArray | null;
+    let index = 0;
+
+    while (
+      (match = sentenceRegex.exec(page.content)) !== null
+    ) {
+      const text = match[0];
+      const trimmed = text.trim();
+
+      if (!trimmed) {
+        continue;
+      }
+
+      const leadingWhitespace =
+        text.length - text.trimStart().length;
+
+      const trailingWhitespace =
+        text.length - text.trimEnd().length;
+
+      const startOffset =
+        page.startOffset +
+        match.index +
+        leadingWhitespace;
+
+      const endOffset =
+        page.startOffset +
+        match.index +
+        text.length -
+        trailingWhitespace;
+
+      sentences.push({
+        id: `${currentChapterIndex}-${currentPageIndex}-${index}`,
+        text: trimmed,
+        chapterIndex: currentChapterIndex,
+        startOffset,
+        endOffset,
+      });
+
+      index++;
+    }
+
+    return sentences;
+  }, [
+    pages,
+    currentPageIndex,
+    currentChapterIndex,
+  ]);
+
+  const activeTTSSegments = React.useMemo(() => {
+    if (settings.readingMode === 'paginate') {
+      return paginationTTSSentences;
+    }
+
+    return ttsSentences;
+  }, [
+    settings.readingMode,
+    paginationTTSSentences,
+    ttsSentences,
+  ]);
+
+  const handleTTSComplete = React.useCallback(() => {
+    if (settings.readingMode !== 'paginate') {
+      return;
+    }
+
+    if (currentPageIndex < pages.length - 1) {
+      continueTTSAfterPageChangeRef.current = true;
+
+      setCurrentPageIndex(page => page + 1);
+
+      return;
+    }
+
+    if (
+      book &&
+      currentChapterIndex < book.chapters.length - 1
+    ) {
+      continueTTSAfterPageChangeRef.current = true;
+
+      readingOffsetRef.current = 0;
+
+      setCurrentChapterIndex(
+        chapter => chapter + 1
+      );
+
+      setCurrentPageIndex(0);
+    }
+  }, [
+    settings.readingMode,
+    currentPageIndex,
+    pages.length,
+    book,
+    currentChapterIndex,
+  ]);
+
+  const tts = useTTS(
+    activeTTSSegments,
+    0,
+    handleTTSComplete
+  );
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !tts.isPlaying ||
+      !ttsSentences.length
+    ) {
+      return;
+    }
+
+    const currentSegment =
+      ttsSentences[tts.currentParagraphIndex];
+
+    if (!currentSegment) {
+      return;
+    }
+
+    const scrollToCurrentSentence = () => {
+      const element = document.querySelector(
+        `[data-tts-segment-id="${currentSegment.id}"]`
+      ) as HTMLElement | null;
+
+      if (!element) {
+        return;
+      }
+
+      const rect =
+        element.getBoundingClientRect();
+
+      const elementCenter =
+        rect.top + rect.height / 2;
+
+      const screenCenter =
+        window.innerHeight / 2;
+
+      const distance =
+        elementCenter - screenCenter;
+
+      window.scrollBy({
+        top: distance,
+        behavior: 'smooth',
+      });
+    };
+
+    requestAnimationFrame(() => {
+      scrollToCurrentSentence();
+    });
+  }, [
+    settings.readingMode,
+    tts.isPlaying,
+    tts.currentParagraphIndex,
+    ttsSentences,
+  ]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'paginate' ||
+      !continueTTSAfterPageChangeRef.current
+    ) {
+      return;
+    }
+
+    if (
+      isCalculating ||
+      calculatedChapterIndex !== currentChapterIndex
+    ) {
+      return;
+    }
+
+    if (activeTTSSegments.length === 0) {
+      return;
+    }
+
+    continueTTSAfterPageChangeRef.current = false;
+
+    tts.setParagraphIndex(0);
+
+    requestAnimationFrame(() => {
+      tts.play();
+    });
+  }, [
+    settings.readingMode,
+    currentPageIndex,
+    currentChapterIndex,
+    calculatedChapterIndex,
+    isCalculating,
+    activeTTSSegments,
+  ]);
+
+  useEffect(() => {
+    if (
+      settings.readingMode !== 'paginate' ||
+      !continueTTSAfterPreviousPageRef.current ||
+      pendingLastPage
+    ) {
+      return;
+    }
+
+    if (activeTTSSegments.length === 0) {
+      return;
+    }
+
+    continueTTSAfterPreviousPageRef.current = false;
+
+    const lastSentenceIndex = activeTTSSegments.length - 1;
+
+    tts.setParagraphIndex(lastSentenceIndex);
+
+    requestAnimationFrame(() => {
+      tts.play();
+    });
+  }, [
+    settings.readingMode,
+    currentPageIndex,
+    currentChapterIndex,
+    pendingLastPage,
+    activeTTSSegments,
+  ]);
+
+    const handleTTSNext = () => {
+      if (
+        settings.readingMode === 'paginate' &&
+        activeTTSSegments.length > 0 &&
+        tts.currentParagraphIndex >=
+          activeTTSSegments.length - 1
+      ) {
+        tts.stop();
+        handleTTSComplete();
+        return;
+      }
+
+      tts.next();
+    };
+
+    const handleTTSPrevious = () => {
+      if (
+        settings.readingMode !== 'paginate' ||
+        activeTTSSegments.length === 0
+      ) {
+        if (tts.currentParagraphIndex > 0) {
+          tts.stop();
+          tts.setParagraphIndex(
+            tts.currentParagraphIndex - 1
+          );
+
+          requestAnimationFrame(() => {
+            tts.play();
+          });
+        }
+
+        return;
+      }
+
+      if (tts.currentParagraphIndex > 0) {
+        tts.stop();
+
+        tts.setParagraphIndex(
+          tts.currentParagraphIndex - 1
+        );
+
+        requestAnimationFrame(() => {
+          tts.play();
+        });
+
+        return;
+      }
+
+      tts.stop();
+
+      if (currentPageIndex > 0) {
+        continueTTSAfterPreviousPageRef.current = true;
+
+        setCurrentPageIndex(page => page - 1);
+
+        return;
+      }
+
+      if (
+        book &&
+        currentChapterIndex > 0
+      ) {
+        continueTTSAfterPreviousPageRef.current = true;
+
+        readingOffsetRef.current = null;
+        setPendingLastPage(true);
+
+        setCurrentChapterIndex(
+          chapter => chapter - 1
+        );
+
+        setCurrentPageIndex(0);
+      }
+    };
 
   useEffect(() => {
     if (
@@ -784,6 +1249,64 @@ const ReaderPage: React.FC = () => {
     ];
   };
 
+    const getCurrentScrollTTSSegment = () => {
+      const currentPage = getCurrentScrollPage();
+
+      if (!currentPage) {
+        return null;
+      }
+
+      const element = document.querySelector(
+        `[data-chapter-index="${currentPage.chapterIndex}"][data-start-offset="${currentPage.startOffset}"]`
+      ) as HTMLElement | null;
+
+      if (!element) {
+        return null;
+      }
+
+      const rect = element.getBoundingClientRect();
+
+      const viewportPoint = Math.min(
+        window.innerHeight * 0.35,
+        window.innerHeight - 20
+      );
+
+      const relativePosition = Math.max(
+        0,
+        Math.min(
+          1,
+          (viewportPoint - rect.top) /
+            Math.max(1, rect.height)
+        )
+      );
+
+      const currentOffset = Math.round(
+        currentPage.startOffset +
+          (currentPage.endOffset -
+            currentPage.startOffset) *
+            relativePosition
+      );
+
+      const segmentIndex = ttsSentences.findIndex(
+        segment =>
+          segment.chapterIndex === currentPage.chapterIndex &&
+          currentOffset >= segment.startOffset &&
+          currentOffset < segment.endOffset
+      );
+
+      if (segmentIndex >= 0) {
+        return ttsSentences[segmentIndex];
+      }
+
+      const nextSegment = ttsSentences.find(
+        segment =>
+          segment.chapterIndex === currentPage.chapterIndex &&
+          segment.startOffset >= currentOffset
+      );
+
+      return nextSegment ?? null;
+    };
+
   const calculateScrollProgress = () => {
     if (!book?.chapters?.length) {
       return 0;
@@ -865,11 +1388,18 @@ const ReaderPage: React.FC = () => {
     ) {
       readingOffsetRef.current = 0;
 
+      syncTTSWithReader(
+        currentChapterIndex + 1,
+        0
+      );
+
       setCurrentChapterIndex(
         chapter => chapter + 1
       );
 
       setCurrentPageIndex(0);
+
+      return;
     }
   };
 
@@ -899,6 +1429,11 @@ const ReaderPage: React.FC = () => {
       readingOffsetRef.current = null;
       setPendingBookmark(null);
       setPendingLastPage(true);
+
+      syncTTSWithReader(
+        currentChapterIndex - 1,
+        0
+      );
 
       setCurrentChapterIndex(
         chapter => chapter - 1
@@ -1092,6 +1627,16 @@ const ReaderPage: React.FC = () => {
     useState(
       book?.readingProgress ?? 0
     );
+
+  useEffect(() => {
+    if (!book) {
+      return;
+    }
+
+    setReadingProgress(
+      book.readingProgress ?? 0
+    );
+  }, [book]);
 
   useEffect(() => {
     if (
@@ -1934,9 +2479,10 @@ useEffect(() => {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() =>
-                  navigate('/library')
-                }
+                onClick={() => {
+                  tts.stop();
+                  navigate('/library');
+                }}
                 className="text-muted-foreground"
               >
                 <ArrowLeft className="w-5 h-5" />
@@ -2245,7 +2791,53 @@ useEffect(() => {
                   )}
 
                   <div className="whitespace-pre-wrap">
-                    {page.content}
+                    {(() => {
+                      const currentTTSParagraph =
+                        getCurrentTTSSegment();
+
+                      if (
+                        !currentTTSParagraph ||
+                        currentTTSParagraph.chapterIndex !==
+                          page.chapterIndex
+                      ) {
+                        return page.content;
+                      }
+
+                      const selectionStart = Math.max(
+                        currentTTSParagraph.startOffset,
+                        page.startOffset
+                      );
+
+                      const selectionEnd = Math.min(
+                        currentTTSParagraph.endOffset,
+                        page.endOffset
+                      );
+
+                      if (selectionStart >= selectionEnd) {
+                        return page.content;
+                      }
+
+                      const start =
+                        selectionStart - page.startOffset;
+
+                      const end =
+                        selectionEnd - page.startOffset;
+
+                      return (
+                        <>
+                          {page.content.slice(0, start)}
+
+                          <mark
+                            data-tts-segment-id={currentTTSParagraph.id}
+                            className="text-inherit rounded-sm bg-violet-400/30"
+                          >
+                            {page.content.slice(start, end)}
+                          </mark>
+
+                          {page.content.slice(end)}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               ))
@@ -2316,54 +2908,38 @@ useEffect(() => {
                       }}
                     >
                       {(() => {
+                        const currentTTSParagraph = getCurrentTTSSegment();
+
                         if (
-                          !activeBookmark ||
-                          activeBookmark.chapterIndex !==
-                            currentChapterIndex
+                          !currentTTSParagraph ||
+                          currentTTSParagraph.chapterIndex !== currentChapterIndex
                         ) {
                           return line.text;
                         }
 
-                        const selectionStart =
-                          Math.max(
-                            activeBookmark.startOffset,
-                            line.startOffset
-                          );
+                        const selectionStart = Math.max(
+                          currentTTSParagraph.startOffset,
+                          line.startOffset
+                        );
 
-                        const selectionEnd =
-                          Math.min(
-                            activeBookmark.endOffset,
-                            line.endOffset
-                          );
+                        const selectionEnd = Math.min(
+                          currentTTSParagraph.endOffset,
+                          line.endOffset
+                        );
 
-                        if (
-                          selectionStart >= selectionEnd
-                        ) {
+                        if (selectionStart >= selectionEnd) {
                           return line.text;
                         }
 
-                        const start =
-                          selectionStart -
-                          line.startOffset;
-
-                        const end =
-                          selectionEnd -
-                          line.startOffset;
+                        const start = selectionStart - line.startOffset;
+                        const end = selectionEnd - line.startOffset;
 
                         return (
                           <>
                             {line.text.slice(0, start)}
-
-                            <mark
-                              className={`text-inherit rounded-sm transition-colors duration-1000 ${
-                                bookmarkHighlightVisible
-                                  ? 'bg-violet-400/30'
-                                  : 'bg-transparent'
-                              }`}
-                            >
+                            <mark className="text-inherit rounded-sm bg-violet-400/30">
                               {line.text.slice(start, end)}
                             </mark>
-
                             {line.text.slice(end)}
                           </>
                         );
@@ -2491,9 +3067,43 @@ useEffect(() => {
 
       <TTSControlPanel
         visible={showTTS}
-        onClose={() =>
-          setShowTTS(false)
+        onClose={() => {
+          tts.stop();
+          setShowTTS(false);
+        }}
+        isPlaying={tts.isPlaying}
+        currentParagraphIndex={
+          tts.currentParagraphIndex
         }
+        paragraphCount={
+          activeTTSSegments.length
+        }
+        speed={tts.speed}
+        voices={tts.voices}
+        selectedVoice={tts.selectedVoice}
+        onPlay={() => {
+          if (settings.readingMode === 'scroll') {
+            const currentSegment =
+              getCurrentScrollTTSSegment();
+
+            if (currentSegment) {
+              const index = ttsSentences.findIndex(
+                segment => segment.id === currentSegment.id
+              );
+
+              if (index >= 0) {
+                tts.setParagraphIndex(index);
+              }
+            }
+          }
+
+          tts.play();
+        }}
+        onPause={tts.pause}
+        onPrevious={handleTTSPrevious}
+        onNext={handleTTSNext}
+        onSpeedChange={tts.changeSpeed}
+        onVoiceChange={tts.changeVoice}
       />
 
       {settings.readingMode === 'paginate' && (
