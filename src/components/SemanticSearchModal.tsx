@@ -1,27 +1,64 @@
 import React, { useState } from 'react';
-import { mockSearchResults } from '@/lib/mock-data';
+import { searchSemanticIndex } from '@/services/semanticSearch';
 import { Search, X, ArrowRight } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  onJumpTo: (chapterId: string) => void;
+  onJumpTo: (
+    chapterIndex: number,
+    startOffset: number
+  ) => void;
+  isBuildingIndex: boolean;
+  indexProgress: number;
+  semanticIndex: Awaited<
+    ReturnType<typeof import('@/services/semanticSearch').createSemanticSearchIndex>
+  > | null;
+  chapters: {
+    title?: string;
+  }[];
 }
 
-const SemanticSearchModal: React.FC<Props> = ({ open, onClose, onJumpTo }) => {
+const SemanticSearchModal: React.FC<Props> = ({
+  open,
+  onClose,
+  onJumpTo,
+  isBuildingIndex,
+  indexProgress,
+  semanticIndex,
+  chapters,
+}) => {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState(mockSearchResults);
+  const [results, setResults] = useState<
+    Awaited<
+      ReturnType<typeof searchSemanticIndex>
+    >
+  >([]);
   const [searching, setSearching] = useState(false);
 
   const handleSearch = async () => {
-    if (!query.trim()) return;
-    setSearching(true);
-    // Mock search delay
-    await new Promise(r => setTimeout(r, 600));
-    setResults(mockSearchResults);
+  if (!query.trim() || !semanticIndex) return;
+
+  setSearching(true);
+
+  try {
+    const searchResults = await searchSemanticIndex(
+      query,
+      semanticIndex
+    );
+
+    setResults(searchResults);
+  } catch (error) {
+    console.error(
+      'Semantic search error:',
+      error
+    );
+    setResults([]);
+  } finally {
     setSearching(false);
-  };
+  }
+};
 
   if (!open) return null;
 
@@ -48,7 +85,30 @@ const SemanticSearchModal: React.FC<Props> = ({ open, onClose, onJumpTo }) => {
 
           {/* Results */}
           <div className="max-h-[60vh] overflow-y-auto p-2">
-            {searching ? (
+            {isBuildingIndex ? (
+              <div className="px-4 py-8">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-muted-foreground">
+                    Preparing semantic search...
+                  </span>
+
+                  <span className="text-sm text-primary font-medium">
+                    {indexProgress}%
+                  </span>
+                </div>
+
+                <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-300"
+                    style={{ width: `${indexProgress}%` }}
+                  />
+                </div>
+
+                <p className="text-xs text-muted-foreground mt-2">
+                  The book is being analyzed by AI. You can search when this is finished.
+                </p>
+              </div>
+            ) : searching ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
                 <span className="w-5 h-5 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin mr-3" />
                 Searching semantically...
@@ -59,18 +119,34 @@ const SemanticSearchModal: React.FC<Props> = ({ open, onClose, onJumpTo }) => {
                   <button
                     key={i}
                     onClick={() => {
-                      onJumpTo(r.chapterId);
+                      onJumpTo(
+                        r.chapterIndex,
+                        r.startOffset
+                      );
                       onClose();
                     }}
                     className="w-full text-left p-4 rounded-xl hover:bg-secondary transition-colors group"
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-primary font-medium">{r.chapterTitle}</span>
-                      <span className="text-xs text-muted-foreground">{Math.round(r.relevance * 100)}% match</span>
+                      <span className="text-xs text-primary font-medium">
+                        {chapters[r.chapterIndex]?.title ||
+                          `Chapter ${r.chapterIndex + 1}`}
+                      </span>
+
+                      <span className="text-xs text-muted-foreground">
+                        {Math.round(r.score * 100)}% match
+                      </span>
                     </div>
-                    <p className="text-sm text-foreground/80 font-reading leading-relaxed">{r.fragment}</p>
+
+                    <p className="text-sm text-foreground/80 font-reading leading-relaxed">
+                      {r.text.length > 300
+                        ? `${r.text.slice(0, 300)}...`
+                        : r.text}
+                    </p>
+
                     <div className="flex items-center gap-1 mt-2 text-xs text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                      Jump to fragment <ArrowRight className="w-3 h-3" />
+                      Jump to fragment
+                      <ArrowRight className="w-3 h-3" />
                     </div>
                   </button>
                 ))}

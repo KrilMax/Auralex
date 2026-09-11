@@ -52,6 +52,12 @@ import {
 
 import { useTTS } from '@/hooks/useTTS';
 
+import {
+  createSemanticSearchIndex,
+  saveSemanticSearchIndex,
+  loadSemanticSearchIndex,
+} from '@/services/semanticSearch';
+
 const defaultSettings: ReaderSettings = {
   theme: 'dark',
   fontFamily: "'Crimson Pro', Georgia, serif",
@@ -1741,6 +1747,81 @@ const ReaderPage: React.FC = () => {
   const [showSearch, setShowSearch] =
     useState(false);
 
+  const [semanticIndex, setSemanticIndex] =
+    useState<Awaited<
+      ReturnType<
+        typeof createSemanticSearchIndex
+      >
+    > | null>(null);
+
+  const [isBuildingSemanticIndex, setIsBuildingSemanticIndex] =
+    useState(false);
+
+  const [semanticIndexProgress, setSemanticIndexProgress] =
+    useState(0);
+
+  const buildSemanticIndex = async () => {
+    if (
+      !book?.chapters?.length ||
+      isBuildingSemanticIndex ||
+      semanticIndex
+    ) {
+      return;
+    }
+
+    setIsBuildingSemanticIndex(true);
+    setSemanticIndexProgress(0);
+
+    try {
+      const cachedIndex =
+        await loadSemanticSearchIndex(book.chapters);
+
+      if (cachedIndex) {
+        setSemanticIndex(cachedIndex);
+        setSemanticIndexProgress(100);
+
+        console.log(
+          'Semantic index loaded from cache:',
+          cachedIndex.length
+        );
+
+        return;
+      }
+
+      const index =
+        await createSemanticSearchIndex(
+          book.chapters,
+          (current, total) => {
+            setSemanticIndexProgress(
+              Math.round(
+                (current / total) * 100
+              )
+            );
+          }
+        );
+
+      await saveSemanticSearchIndex(
+        book.chapters,
+        index
+      );
+
+      setSemanticIndex(index);
+      setSemanticIndexProgress(100);
+
+      console.log(
+        'Semantic index ready and cached:',
+        index.length
+      );
+    } catch (error) {
+      console.error(
+        'Semantic index error:',
+        error
+      );
+    } finally {
+      setIsBuildingSemanticIndex(false);
+    }
+  };
+
   const [showTTS, setShowTTS] =
     useState(false);
 
@@ -2534,9 +2615,11 @@ useEffect(() => {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() =>
-                  setShowSearch(true)
-                }
+                onClick={() => {
+                  setShowSearch(true);
+
+                  void buildSemanticIndex();
+                }}
                 className={
                   visibleActions.includes(
                     'search'
@@ -3050,11 +3133,42 @@ useEffect(() => {
         onClose={() =>
           setShowSearch(false)
         }
-        onJumpTo={(chapterId) => {
+        isBuildingIndex={isBuildingSemanticIndex}
+        indexProgress={semanticIndexProgress}
+        semanticIndex={semanticIndex}
+        chapters={book?.chapters ?? []}
+        onJumpTo={(chapterIndex, startOffset) => {
           console.log(
-            'Jump to chapter:',
-            chapterId
+            'Jump to:',
+            chapterIndex,
+            startOffset
           );
+
+          readingOffsetRef.current =
+            startOffset;
+
+          setPendingLastPage(false);
+          setPendingBookmark(null);
+          setActiveBookmark(null);
+          setBookmarkHighlightVisible(false);
+
+          if (
+            settings.readingMode === 'scroll'
+          ) {
+            setScrollPages([]);
+            setLoadedScrollChapterIndex(-1);
+            setFirstLoadedScrollChapterIndex(-1);
+          }
+
+          setVisibleChapterIndex(
+            chapterIndex
+          );
+
+          setCurrentChapterIndex(
+            chapterIndex
+          );
+
+          setCurrentPageIndex(0);
 
           setShowSearch(false);
         }}
