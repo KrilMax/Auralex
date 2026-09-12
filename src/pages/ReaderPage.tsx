@@ -333,6 +333,9 @@ const ReaderPage: React.FC = () => {
   const isLoadingPreviousChapterRef =
     useRef(false);
 
+  const isLoadingNextChapterRef =
+    useRef(false);
+
   const isNavigatingToBookmarkRef =
     useRef(false);
 
@@ -732,6 +735,10 @@ const ReaderPage: React.FC = () => {
       return;
     }
 
+    if (pendingBookmark) {
+      return;
+    }
+
     setScrollPages(prev => {
       const existingChapterIndexes =
         new Set(
@@ -746,7 +753,11 @@ const ReaderPage: React.FC = () => {
         return prev;
       }
 
-      return [...prev, ...pages];
+      return [...prev, ...pages].sort(
+        (a, b) =>
+          a.chapterIndex - b.chapterIndex ||
+          a.startOffset - b.startOffset
+      );
     });
 
     setLoadedScrollChapterIndex(
@@ -858,37 +869,17 @@ const ReaderPage: React.FC = () => {
       return;
     }
 
-    const targetPage =
-      scrollPages.find(
-        page =>
-          pendingBookmark.startOffset >=
-            page.startOffset &&
-          pendingBookmark.startOffset <
-            page.endOffset
-      );
-
-    if (!targetPage) {
-      return;
-    }
-
     const scrollToBookmark = () => {
-      const element =
-        document.querySelector(
-          `[data-chapter-index="${targetPage.chapterIndex}"][data-start-offset="${targetPage.startOffset}"]`
-        ) as HTMLElement | null;
+      const element = document.querySelector(
+        `[data-bookmark-id="${pendingBookmark.id}"]`
+      ) as HTMLElement | null;
 
       if (!element) {
+        requestAnimationFrame(
+          scrollToBookmark
+        );
         return;
       }
-
-      const progressWithinPage =
-        targetPage.endOffset >
-        targetPage.startOffset
-          ? (pendingBookmark.startOffset -
-              targetPage.startOffset) /
-            (targetPage.endOffset -
-              targetPage.startOffset)
-          : 0;
 
       const rect =
         element.getBoundingClientRect();
@@ -896,16 +887,11 @@ const ReaderPage: React.FC = () => {
       const targetScroll =
         window.scrollY +
         rect.top -
-        window.innerHeight * 0.35 +
-        rect.height *
-          progressWithinPage;
+        window.innerHeight * 0.35;
 
       window.scrollTo({
-        top: Math.max(
-          0,
-          targetScroll
-        ),
-        behavior: 'instant',
+        top: Math.max(0, targetScroll),
+        behavior: 'smooth',
       });
 
       isNavigatingToBookmarkRef.current = false;
@@ -929,7 +915,8 @@ const ReaderPage: React.FC = () => {
     if (
       settings.readingMode !== 'scroll' ||
       !book?.chapters ||
-      isCalculating
+      isCalculating ||
+      isLoadingNextChapterRef.current
     ) {
       return;
     }
@@ -952,6 +939,8 @@ const ReaderPage: React.FC = () => {
     ) {
       return;
     }
+
+    isLoadingNextChapterRef.current = true;
 
     const nextChapter =
       book.chapters[nextChapterIndex];
@@ -977,13 +966,16 @@ const ReaderPage: React.FC = () => {
       nextChapterIndex
     );
 
+    isLoadingNextChapterRef.current = false;
+
   };
 
   const loadPreviousScrollChapter = () => {
     if (
       settings.readingMode !== 'scroll' ||
       !book?.chapters ||
-      isCalculating
+      isCalculating ||
+      isLoadingNextChapterRef.current
     ) {
       return;
     }
@@ -2081,12 +2073,13 @@ const ReaderPage: React.FC = () => {
     ) {
       setScrollPages([]);
       setLoadedScrollChapterIndex(-1);
+      setFirstLoadedScrollChapterIndex(-1);
     }
 
     setVisibleChapterIndex(
       chapterIndex
     );
-    
+
     setCurrentChapterIndex(
       chapterIndex
     );
@@ -2394,6 +2387,8 @@ const addBookmark = async () => {
 
     // INFINITE SCROLL
 
+    // INFINITE SCROLL
+
     const chapterAlreadyLoaded =
       scrollPages.some(
         page =>
@@ -2401,25 +2396,89 @@ const addBookmark = async () => {
           bookmark.chapterIndex
       );
 
-    if (
-      chapterAlreadyLoaded
-    ) {
+    if (chapterAlreadyLoaded) {
       setPendingBookmark({
         ...bookmark,
       });
 
       return;
     }
+
+    const targetChapterIndex =
+      bookmark.chapterIndex;
+
+    const previousChapterIndex =
+      targetChapterIndex - 1;
+
+    const targetChapter =
+      book.chapters[targetChapterIndex];
+
+    const previousChapter =
+      previousChapterIndex >= 0
+        ? book.chapters[previousChapterIndex]
+        : null;
+
+    if (!targetChapter) {
+      return;
+    }
+
+    const targetPages =
+      calculateChapterPages(
+        targetChapter,
+        targetChapterIndex,
+        settings,
+        layoutSize.width,
+        Math.max(
+          0,
+          layoutSize.height - 20
+        )
+      );
+
+    const previousPages =
+      previousChapter
+        ? calculateChapterPages(
+            previousChapter,
+            previousChapterIndex,
+            settings,
+            layoutSize.width,
+            Math.max(
+              0,
+              layoutSize.height - 20
+            )
+          )
+        : [];
+
+    setScrollPages(prev => {
+      const existingChapterIndexes =
+        new Set(
+          prev.map(
+            page => page.chapterIndex
+          )
+        );
+
+      const pagesToAdd = [
+        ...previousPages,
+        ...targetPages,
+      ].filter(
+        page =>
+          !existingChapterIndexes.has(
+            page.chapterIndex
+          )
+      );
+
+      return [
+        ...prev,
+        ...pagesToAdd,
+      ];
+    });
+
     setVisibleChapterIndex(
-      bookmark.chapterIndex
+      targetChapterIndex
     );
 
     setCurrentChapterIndex(
-      bookmark.chapterIndex
+      targetChapterIndex
     );
-
-    setScrollPages([]);
-    setLoadedScrollChapterIndex(-1);
 
     setPendingBookmark({
       ...bookmark,
@@ -2437,7 +2496,7 @@ useEffect(() => {
 
   const clearTimer = window.setTimeout(() => {
     setActiveBookmark(null);
-  }, 6000);
+  }, 5500);
 
   return () => {
     window.clearTimeout(fadeTimer);
@@ -2890,6 +2949,51 @@ useEffect(() => {
 
                   <div className="whitespace-pre-wrap">
                     {(() => {
+                      const currentBookmark =
+                        activeBookmark &&
+                        activeBookmark.chapterIndex ===
+                          page.chapterIndex
+                          ? activeBookmark
+                          : null;
+
+                      if (currentBookmark) {
+                        const selectionStart = Math.max(
+                          currentBookmark.startOffset,
+                          page.startOffset
+                        );
+
+                        const selectionEnd = Math.min(
+                          currentBookmark.endOffset,
+                          page.endOffset
+                        );
+
+                        if (selectionStart < selectionEnd) {
+                          const start =
+                            selectionStart - page.startOffset;
+                          const end =
+                            selectionEnd - page.startOffset;
+
+                          return (
+                            <>
+                              {page.content.slice(0, start)}
+
+                              <mark
+                                data-bookmark-id={currentBookmark.id}
+                                className={`text-inherit rounded-sm transition-colors duration-500 ${
+                                  bookmarkHighlightVisible
+                                    ? 'bg-violet-400/30'
+                                    : 'bg-transparent'
+                                }`}
+                              >
+                                {page.content.slice(start, end)}
+                              </mark>
+
+                              {page.content.slice(end)}
+                            </>
+                          );
+                        }
+                      }
+
                       const currentTTSParagraph =
                         getCurrentTTSSegment();
 
@@ -2917,7 +3021,6 @@ useEffect(() => {
 
                       const start =
                         selectionStart - page.startOffset;
-
                       const end =
                         selectionEnd - page.startOffset;
 
@@ -2926,7 +3029,9 @@ useEffect(() => {
                           {page.content.slice(0, start)}
 
                           <mark
-                            data-tts-segment-id={currentTTSParagraph.id}
+                            data-tts-segment-id={
+                              currentTTSParagraph.id
+                            }
                             className="text-inherit rounded-sm bg-violet-400/30"
                           >
                             {page.content.slice(start, end)}
@@ -3006,11 +3111,58 @@ useEffect(() => {
                       }}
                     >
                       {(() => {
-                        const currentTTSParagraph = getCurrentTTSSegment();
+                        const currentBookmark =
+                          activeBookmark &&
+                          activeBookmark.chapterIndex ===
+                            currentChapterIndex
+                            ? activeBookmark
+                            : null;
+
+                        if (currentBookmark) {
+                          const selectionStart = Math.max(
+                            currentBookmark.startOffset,
+                            line.startOffset
+                          );
+
+                          const selectionEnd = Math.min(
+                            currentBookmark.endOffset,
+                            line.endOffset
+                          );
+
+                          if (selectionStart < selectionEnd) {
+                            const start =
+                              selectionStart - line.startOffset;
+                            const end =
+                              selectionEnd - line.startOffset;
+
+                            return (
+                              <>
+                                {line.text.slice(0, start)}
+
+                                <mark
+                                  data-bookmark-id={currentBookmark.id}
+                                  className={`text-inherit rounded-sm transition-colors duration-500 ${
+                                    bookmarkHighlightVisible
+                                      ? 'bg-violet-400/30'
+                                      : 'bg-transparent'
+                                  }`}
+                                >
+                                  {line.text.slice(start, end)}
+                                </mark>
+
+                                {line.text.slice(end)}
+                              </>
+                            );
+                          }
+                        }
+
+                        const currentTTSParagraph =
+                          getCurrentTTSSegment();
 
                         if (
                           !currentTTSParagraph ||
-                          currentTTSParagraph.chapterIndex !== currentChapterIndex
+                          currentTTSParagraph.chapterIndex !==
+                            currentChapterIndex
                         ) {
                           return line.text;
                         }
@@ -3029,15 +3181,19 @@ useEffect(() => {
                           return line.text;
                         }
 
-                        const start = selectionStart - line.startOffset;
-                        const end = selectionEnd - line.startOffset;
+                        const start =
+                          selectionStart - line.startOffset;
+                        const end =
+                          selectionEnd - line.startOffset;
 
                         return (
                           <>
                             {line.text.slice(0, start)}
+
                             <mark className="text-inherit rounded-sm bg-violet-400/30">
                               {line.text.slice(start, end)}
                             </mark>
+
                             {line.text.slice(end)}
                           </>
                         );
