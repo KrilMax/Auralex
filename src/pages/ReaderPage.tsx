@@ -333,6 +333,9 @@ const ReaderPage: React.FC = () => {
   const isLoadingPreviousChapterRef =
     useRef(false);
 
+  const isNavigatingToBookmarkRef =
+    useRef(false);
+
   const previousScrollPositionRef =
     useRef<{
       scrollY: number;
@@ -836,6 +839,7 @@ const ReaderPage: React.FC = () => {
     calculatedChapterIndex,
     currentChapterIndex,
     pages,
+    scrollPages,
   ]);
 
   useEffect(() => {
@@ -903,6 +907,8 @@ const ReaderPage: React.FC = () => {
         ),
         behavior: 'instant',
       });
+
+      isNavigatingToBookmarkRef.current = false;
 
       readingOffsetRef.current = null;
       setPendingBookmark(null);
@@ -1076,6 +1082,12 @@ const ReaderPage: React.FC = () => {
     }
 
     const handleScrollTop = () => {
+      if (
+        isNavigatingToBookmarkRef.current
+      ) {
+        return;
+      }
+
       if (
         window.scrollY <= 800
       ) {
@@ -2337,6 +2349,8 @@ const addBookmark = async () => {
   ) => {
     if (!book) return;
 
+    isNavigatingToBookmarkRef.current = true;
+
     setShowBookmarks(false);
 
     setActiveBookmark(bookmark);
@@ -2698,6 +2712,7 @@ useEffect(() => {
                             onClick={() => {
                               setShowMoreMenu(false);
                               setShowBookmarks(true);
+                              void buildSemanticIndex();
                             }}
                             className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm text-foreground hover:bg-accent"
                           >
@@ -3138,26 +3153,28 @@ useEffect(() => {
         semanticIndex={semanticIndex}
         chapters={book?.chapters ?? []}
         onJumpTo={(chapterIndex, startOffset) => {
-          console.log(
-            'Jump to:',
-            chapterIndex,
-            startOffset
-          );
-
           readingOffsetRef.current =
             startOffset;
 
           setPendingLastPage(false);
-          setPendingBookmark(null);
           setActiveBookmark(null);
           setBookmarkHighlightVisible(false);
 
           if (
             settings.readingMode === 'scroll'
           ) {
-            setScrollPages([]);
-            setLoadedScrollChapterIndex(-1);
-            setFirstLoadedScrollChapterIndex(-1);
+            const chapterAlreadyLoaded =
+              scrollPages.some(
+                page =>
+                  page.chapterIndex ===
+                  chapterIndex
+              );
+
+            if (!chapterAlreadyLoaded) {
+              setScrollPages([]);
+              setLoadedScrollChapterIndex(-1);
+              setFirstLoadedScrollChapterIndex(-1);
+            }
           }
 
           setVisibleChapterIndex(

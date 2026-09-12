@@ -199,22 +199,6 @@ export const createSemanticSearchIndex = async (
   return index;
 };
 
-export const testEmbedding = async (
-  text: string
-) => {
-  const model = await getEmbeddingModel();
-
-  const output = await model(
-    `passage: ${text}`,
-    {
-      pooling: 'mean',
-      normalize: true,
-    }
-  );
-
-  return Array.from(output.data);
-};
-
 export const searchSemanticIndex = async (
   query: string,
   index: SemanticSearchIndexItem[],
@@ -223,6 +207,17 @@ export const searchSemanticIndex = async (
 ) => {
   if (!query.trim() || index.length === 0) {
     return [];
+  }
+
+  const wordCount = query
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+
+  if (wordCount < 3) {
+    throw new Error(
+      'SEARCH_QUERY_TOO_SHORT'
+    );
   }
 
   const model = await getEmbeddingModel();
