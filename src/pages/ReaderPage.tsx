@@ -134,6 +134,14 @@ const ReaderPage: React.FC = () => {
 
           updateBook(loadedBook.id, {
             lastReadAt: Date.now(),
+            lastChapter:
+              loadedBook.lastChapter ?? 0,
+            lastPageIndex:
+              loadedBook.lastPageIndex ?? 0,
+            lastOffset:
+              loadedBook.lastOffset ?? 0,
+            readingProgress:
+              loadedBook.readingProgress ?? 0,
           }).catch(console.error);
         }
       } catch (error) {
@@ -891,7 +899,11 @@ const ReaderPage: React.FC = () => {
 
       window.scrollTo({
         top: Math.max(0, targetScroll),
-        behavior: 'smooth',
+        behavior: 'instant',
+      });
+
+      requestAnimationFrame(() => {
+        saveCurrentScrollProgress();
       });
 
       isNavigatingToBookmarkRef.current = false;
@@ -1317,6 +1329,103 @@ const ReaderPage: React.FC = () => {
       return nextSegment ?? null;
     };
 
+  const saveCurrentScrollProgress = () => {
+    if (
+      settings.readingMode !== 'scroll' ||
+      !book
+    ) {
+      return;
+    }
+
+    const currentPage =
+      getCurrentScrollPage();
+
+    if (!currentPage) {
+      return;
+    }
+
+    const element =
+      document.querySelector(
+        `[data-chapter-index="${currentPage.chapterIndex}"][data-start-offset="${currentPage.startOffset}"]`
+      ) as HTMLElement | null;
+
+    if (!element) {
+      return;
+    }
+
+    const rect =
+      element.getBoundingClientRect();
+
+    const viewportPoint =
+      Math.min(
+        window.innerHeight * 0.35,
+        window.innerHeight - 20
+      );
+
+    const relativePosition =
+      Math.max(
+        0,
+        Math.min(
+          1,
+          (viewportPoint - rect.top) /
+            Math.max(1, rect.height)
+        )
+      );
+
+    const currentOffset =
+      Math.round(
+        currentPage.startOffset +
+          (currentPage.endOffset -
+            currentPage.startOffset) *
+            relativePosition
+      );
+
+    const progress =
+      calculateScrollProgress();
+
+    setReadingProgress(progress);
+
+    updateBook(book.id, {
+      lastChapter:
+        currentPage.chapterIndex,
+
+      lastOffset:
+        currentOffset,
+
+      readingProgress:
+        progress,
+    }).catch(console.error);
+  };
+
+    useEffect(() => {
+      if (
+        settings.readingMode !== 'scroll' ||
+        !book
+      ) {
+        return;
+      }
+
+      const handleScrollEnd = () => {
+        saveCurrentScrollProgress();
+      };
+
+      window.addEventListener(
+        'scrollend',
+        handleScrollEnd
+      );
+
+      return () => {
+        window.removeEventListener(
+          'scrollend',
+          handleScrollEnd
+        );
+      };
+    }, [
+      settings.readingMode,
+      book,
+      scrollPages,
+    ]);
+
   const calculateScrollProgress = () => {
     if (!book?.chapters?.length) {
       return 0;
@@ -1656,96 +1765,39 @@ const ReaderPage: React.FC = () => {
       return;
     }
 
-    const handleScrollProgress = () => {
+    const updateVisibleChapter = () => {
       const currentPage =
         getCurrentScrollPage();
 
-        if (!currentPage) {
-          return;
-        }
+      if (!currentPage) {
+        return;
+      }
 
-        if (
-          settings.readingMode === 'scroll' &&
-          currentPage.chapterIndex !==
-            visibleChapterIndex
-        ) {
-          setVisibleChapterIndex(
-            currentPage.chapterIndex
-          );
-        }
-
-        const element =
-          document.querySelector(
-            `[data-chapter-index="${currentPage.chapterIndex}"][data-start-offset="${currentPage.startOffset}"]`
-          ) as HTMLElement | null;
-
-        if (!element) {
-          return;
-        }
-
-        const rect =
-          element.getBoundingClientRect();
-
-        const viewportPoint =
-          Math.min(
-            window.innerHeight * 0.35,
-            window.innerHeight - 20
-          );
-
-        const relativePosition =
-          Math.max(
-            0,
-            Math.min(
-              1,
-              (viewportPoint - rect.top) /
-                Math.max(1, rect.height)
-            )
-          );
-
-        const currentOffset =
-          Math.round(
-            currentPage.startOffset +
-              (currentPage.endOffset -
-                currentPage.startOffset) *
-                relativePosition
-          );
-
-        const progress =
-          calculateScrollProgress();
-
-        setReadingProgress(progress);
-
-        updateBook(book.id, {
-          lastChapter:
-            currentPage.chapterIndex,
-
-          lastOffset:
-            currentOffset,
-
-          readingProgress:
-            progress,
-        }).catch(console.error);
+      setVisibleChapterIndex(prev =>
+        prev === currentPage.chapterIndex
+          ? prev
+          : currentPage.chapterIndex
+      );
     };
 
     window.addEventListener(
       'scroll',
-      handleScrollProgress,
+      updateVisibleChapter,
       { passive: true }
     );
 
-    handleScrollProgress();
+    updateVisibleChapter();
 
     return () => {
       window.removeEventListener(
         'scroll',
-        handleScrollProgress
+        updateVisibleChapter
       );
     };
   }, [
     settings.readingMode,
     book,
     scrollPages,
-    readingProgress,
   ]);
 
   const [showSearch, setShowSearch] =
@@ -2087,6 +2139,40 @@ const ReaderPage: React.FC = () => {
     setCurrentPageIndex(0);
 
     setShowChapters(false);
+
+    const totalCharacters =
+      book.chapters.reduce(
+        (total, chapter) =>
+          total + chapter.content.length,
+        0
+      );
+
+    const previousCharacters =
+      book.chapters
+        .slice(0, chapterIndex)
+        .reduce(
+          (total, chapter) =>
+            total + chapter.content.length,
+          0
+        );
+
+    const progress =
+      totalCharacters > 0
+        ? Math.round(
+            (previousCharacters /
+              totalCharacters) *
+              100
+          )
+        : 0;
+
+    setReadingProgress(progress);
+
+    updateBook(book.id, {
+      lastChapter: chapterIndex,
+      lastOffset: 0,
+      lastPageIndex: 0,
+      readingProgress: progress,
+    }).catch(console.error);
   };
 
   // =========================================================
@@ -2634,6 +2720,7 @@ useEffect(() => {
                 variant="ghost"
                 size="icon"
                 onClick={() => {
+                  saveCurrentScrollProgress();
                   tts.stop();
                   navigate('/library');
                 }}
@@ -3254,7 +3341,9 @@ useEffect(() => {
                       }
                       className={`w-full text-left rounded-lg px-4 py-3 transition-colors ${
                         index ===
-                        currentChapterIndex
+                        (settings.readingMode === 'scroll'
+                          ? visibleChapterIndex
+                          : currentChapterIndex)
                           ? 'bg-primary/10 text-primary'
                           : 'text-foreground hover:bg-accent'
                       }`}
